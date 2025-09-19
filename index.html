@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>QA Dashboard</h1>
+    </header>
+
+    <main>
+      <!-- DASHBOARD -->
+      <section id="secDashboard">
+        <div class="topbar">
+          <h2>Lojas</h2>
+          <button id="btnNovaLoja">+ Nova Loja</button>
+        </div>
+        <div id="dashboardStores" class="grid"></div>
+      </section>
+
+      <!-- LOJA DETALHE -->
+      <section id="secLoja" style="display: none">
+        <div class="topbar">
+          <button id="btnVoltarDashboard">← Voltar</button>
+          <h2 id="lojaTitulo"></h2>
+        </div>
+
+        <div class="card">
+          <h3>Gerenciar Loja</h3>
+          <button id="btnEditarLoja">Editar Nome/Site</button>
+          <button id="btnExcluirLoja">Excluir Loja</button>
+        </div>
+
+        <div class="card">
+          <h3>Cenários</h3>
+          <form id="scenarioForm" class="grid-form">
+            <input
+              type="text"
+              id="scenarioTitle"
+              placeholder="Título"
+              required
+            />
+            <input
+              type="text"
+              id="scenarioCategory"
+              placeholder="Categoria"
+              required
+            />
+            <select id="scenarioAutomation">
+              <option value="Automatizado">Automatizado</option>
+              <option value="Não Automatizado">Não Automatizado</option>
+            </select>
+            <select id="scenarioCluster">
+              <option value="Desktop">Desktop</option>
+              <option value="Mobile">Mobile</option>
+              <option value="Ambos">Ambos</option>
+            </select>
+            <input type="text" id="scenarioObs" placeholder="Obs" />
+            <button type="submit">Adicionar</button>
+          </form>
+          <table id="cenariosTabela"></table>
+        </div>
+
+        <div class="card">
+          <h3>Ambientes</h3>
+          <button id="btnNovoAmbiente">+ Criar Ambiente</button>
+          <div id="ambientesList" class="grid"></div>
+        </div>
+      </section>
+
+      <!-- AMBIENTE DETALHE -->
+      <section id="secAmbiente" style="display: none">
+        <div class="topbar">
+          <button id="btnVoltarLoja">← Voltar</button>
+          <h2 id="ambienteTitulo"></h2>
+        </div>
+        <ul id="cenariosExecucao"></ul>
+      </section>
+    </main>
+
+    <footer>
+      <small>QA Dashboard · Firebase</small>
+    </footer>
+
+    <script type="module" src="script.js"></script>
+  </body>
+</html>
