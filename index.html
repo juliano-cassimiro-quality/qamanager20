@@ -3,87 +3,310 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QA Dashboard</title>
+    <title>QA Manager</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <h1>QA Dashboard</h1>
-    </header>
-
-    <main>
-      <!-- DASHBOARD -->
-      <section id="secDashboard">
-        <div class="topbar">
-          <h2>Lojas</h2>
-          <button id="btnNovaLoja">+ Nova Loja</button>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-icon" aria-hidden="true">🧪</div>
+          <div class="brand-text">
+            <h1>QA Manager</h1>
+            <p>Orquestre lojas, ambientes e execuções de QA em um só lugar.</p>
+          </div>
         </div>
-        <div id="dashboardStores" class="grid"></div>
-      </section>
-
-      <!-- LOJA DETALHE -->
-      <section id="secLoja" style="display: none">
-        <div class="topbar">
-          <button id="btnVoltarDashboard">← Voltar</button>
-          <h2 id="lojaTitulo"></h2>
+        <div class="header-actions">
+          <button id="btnNovaLoja" class="primary">+ Nova Loja</button>
         </div>
+      </header>
 
-        <div class="card">
-          <h3>Gerenciar Loja</h3>
-          <button id="btnEditarLoja">Editar Nome/Site</button>
-          <button id="btnExcluirLoja">Excluir Loja</button>
+      <main>
+        <section id="secDashboard" class="view is-visible">
+          <div class="section-heading">
+            <div>
+              <h2>Painel de Lojas</h2>
+              <p class="muted">
+                Acompanhe rapidamente quais lojas fazem parte do programa de QA e
+                acesse seus detalhes.
+              </p>
+            </div>
+          </div>
+          <div id="dashboardStores" class="grid"></div>
+        </section>
+
+        <section id="secLoja" class="view">
+          <div class="topbar">
+            <button id="btnVoltarDashboard" class="ghost">← Voltar</button>
+            <h2 id="lojaTitulo"></h2>
+          </div>
+
+          <div class="card card--overview">
+            <div class="card-header">
+              <div>
+                <p class="card-subtitle">Resumo da loja</p>
+              </div>
+              <div class="card-actions">
+                <button id="btnEditarLoja" class="ghost">Editar loja</button>
+                <button id="btnExcluirLoja" class="ghost danger">
+                  Excluir loja
+                </button>
+              </div>
+            </div>
+            <p id="lojaDescricao" class="muted"></p>
+            <div class="info-grid">
+              <div>
+                <span class="label">Site oficial</span>
+                <a
+                  id="lojaSite"
+                  class="link"
+                  href="#"
+                  target="_blank"
+                  rel="noopener"
+                ></a>
+              </div>
+              <div>
+                <span class="label">Total de cenários</span>
+                <strong id="lojaTotalCenarios">0</strong>
+              </div>
+              <div>
+                <span class="label">Ambientes ativos</span>
+                <strong id="lojaTotalAmbientes">0</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Cadastrar cenário</h3>
+            </div>
+            <form id="scenarioForm" class="grid-form">
+              <div class="field">
+                <label for="scenarioTitle">Título</label>
+                <input type="text" id="scenarioTitle" required />
+              </div>
+              <div class="field">
+                <label for="scenarioCategory">Categoria</label>
+                <input type="text" id="scenarioCategory" required />
+              </div>
+              <div class="field">
+                <label for="scenarioAutomation">Automação</label>
+                <select id="scenarioAutomation">
+                  <option value="Automatizado">Automatizado</option>
+                  <option value="Não Automatizado">Não Automatizado</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="scenarioCluster">Cluster</label>
+                <select id="scenarioCluster">
+                  <option value="Desktop">Desktop</option>
+                  <option value="Mobile">Mobile</option>
+                  <option value="Ambos">Ambos</option>
+                </select>
+              </div>
+              <div class="field field--wide">
+                <label for="scenarioObs">Observações</label>
+                <textarea
+                  id="scenarioObs"
+                  rows="2"
+                  placeholder="Informações adicionais, links, pré-condições..."
+                ></textarea>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary">Adicionar cenário</button>
+              </div>
+            </form>
+
+            <table id="cenariosTabela"></table>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Ambientes</h3>
+              <button id="btnNovoAmbiente" class="primary">
+                + Criar ambiente
+              </button>
+            </div>
+            <p class="muted">
+              Crie ambientes de execução para acompanhar o progresso dos
+              cenários desta loja.
+            </p>
+            <div id="ambientesList" class="grid"></div>
+          </div>
+        </section>
+
+        <section id="secAmbiente" class="view">
+          <div class="topbar">
+            <button id="btnVoltarLoja" class="ghost">← Voltar</button>
+            <h2 id="ambienteTitulo"></h2>
+          </div>
+
+          <div class="card" id="ambienteResumo">
+            <div class="info-grid">
+              <div>
+                <span class="label">Loja</span>
+                <strong id="ambienteLoja">-</strong>
+              </div>
+              <div>
+                <span class="label">Tipo</span>
+                <strong id="ambienteKind">-</strong>
+              </div>
+              <div>
+                <span class="label">Identificador</span>
+                <strong id="ambienteIdentifier">-</strong>
+              </div>
+              <div>
+                <span class="label">Tipo de teste</span>
+                <strong id="ambienteTestType">-</strong>
+              </div>
+              <div>
+                <span class="label">Cenários</span>
+                <strong id="ambienteTotalCenarios">0</strong>
+              </div>
+            </div>
+            <p id="ambienteNotes" class="muted"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Execução dos cenários</h3>
+            </div>
+            <ul id="cenariosExecucao" class="scenario-list"></ul>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <small>QA Manager · Integração com Firebase Firestore</small>
+      </footer>
+    </div>
+
+    <!-- Modal Nova/Editar Loja -->
+    <div class="modal" id="modalStore" role="dialog" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="storeFormTitle">Nova loja</h3>
+          <button type="button" class="icon-button" data-modal-close>
+            ×
+          </button>
         </div>
-
-        <div class="card">
-          <h3>Cenários</h3>
-          <form id="scenarioForm" class="grid-form">
+        <form id="storeForm" class="modal-body">
+          <div class="field">
+            <label for="storeName">Nome</label>
+            <input id="storeName" name="storeName" type="text" required />
+          </div>
+          <div class="field">
+            <label for="storeSite">Site</label>
             <input
+              id="storeSite"
+              name="storeSite"
+              type="url"
+              placeholder="https://exemplo.com"
+            />
+          </div>
+          <div class="field">
+            <label for="storeDescription">Descrição</label>
+            <textarea
+              id="storeDescription"
+              name="storeDescription"
+              rows="3"
+              placeholder="Breve resumo sobre a loja ou o produto"
+            ></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="ghost" data-modal-close>
+              Cancelar
+            </button>
+            <button type="submit" id="storeFormSubmit" class="primary">
+              Salvar loja
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Ambiente -->
+    <div
+      class="modal"
+      id="modalEnvironment"
+      role="dialog"
+      aria-hidden="true"
+    >
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Novo ambiente</h3>
+          <button type="button" class="icon-button" data-modal-close>
+            ×
+          </button>
+        </div>
+        <form id="environmentForm" class="modal-body">
+          <p class="muted">Loja selecionada: <span id="environmentStoreName"></span></p>
+          <div class="field">
+            <label for="environmentKind">Tipo de ambiente</label>
+            <input
+              id="environmentKind"
+              name="environmentKind"
               type="text"
-              id="scenarioTitle"
-              placeholder="Título"
+              placeholder="Ex.: WS, TM, App..."
               required
             />
+          </div>
+          <div class="field">
+            <label for="environmentTestType">Tipo de teste</label>
+            <select id="environmentTestType" name="environmentTestType">
+              <option value="Regressivo">Regressivo</option>
+              <option value="Smoke">Smoke</option>
+              <option value="Exploratório">Exploratório</option>
+              <option value="Performance">Performance</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="environmentIdentifier">Identificador</label>
             <input
+              id="environmentIdentifier"
+              name="environmentIdentifier"
               type="text"
-              id="scenarioCategory"
-              placeholder="Categoria"
+              placeholder="ex.: ws-qa"
               required
             />
-            <select id="scenarioAutomation">
-              <option value="Automatizado">Automatizado</option>
-              <option value="Não Automatizado">Não Automatizado</option>
-            </select>
-            <select id="scenarioCluster">
-              <option value="Desktop">Desktop</option>
-              <option value="Mobile">Mobile</option>
-              <option value="Ambos">Ambos</option>
-            </select>
-            <input type="text" id="scenarioObs" placeholder="Obs" />
-            <button type="submit">Adicionar</button>
-          </form>
-          <table id="cenariosTabela"></table>
-        </div>
+          </div>
+          <div class="field">
+            <label for="environmentNotes">Observações</label>
+            <textarea
+              id="environmentNotes"
+              name="environmentNotes"
+              rows="3"
+              placeholder="Detalhes adicionais, links, credenciais..."
+            ></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="ghost" data-modal-close>
+              Cancelar
+            </button>
+            <button type="submit" class="primary">Criar ambiente</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
-        <div class="card">
-          <h3>Ambientes</h3>
-          <button id="btnNovoAmbiente">+ Criar Ambiente</button>
-          <div id="ambientesList" class="grid"></div>
+    <!-- Modal Confirmação -->
+    <div class="modal" id="modalConfirm" role="dialog" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Confirmação</h3>
+          <button type="button" class="icon-button" data-modal-close>
+            ×
+          </button>
         </div>
-      </section>
-
-      <!-- AMBIENTE DETALHE -->
-      <section id="secAmbiente" style="display: none">
-        <div class="topbar">
-          <button id="btnVoltarLoja">← Voltar</button>
-          <h2 id="ambienteTitulo"></h2>
+        <div class="modal-body">
+          <p id="confirmMessage"></p>
         </div>
-        <ul id="cenariosExecucao"></ul>
-      </section>
-    </main>
-
-    <footer>
-      <small>QA Dashboard · Firebase</small>
-    </footer>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-modal-close>Cancelar</button>
+          <button type="button" class="danger" id="confirmOk">Confirmar</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="script.js"></script>
   </body>
