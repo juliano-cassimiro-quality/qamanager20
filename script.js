@@ -131,9 +131,7 @@ const stripScenarioStage = (scenario) => {
 };
 
 const normalizeCategoryKey = (value) =>
-  removeDiacritics(value)
-    .toLowerCase()
-    .trim();
+  removeDiacritics(value).toLowerCase().trim();
 
 const slugify = (value) => {
   const base = removeDiacritics(value)
@@ -144,9 +142,7 @@ const slugify = (value) => {
 };
 
 const escapeMarkdownCell = (value) =>
-  toText(value)
-    .replace(/\|/g, "\\|")
-    .replace(/\r?\n/g, "<br>");
+  toText(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 
 const toDateOrNull = (value) => {
   if (!value) return null;
@@ -243,8 +239,12 @@ const updateDashboardFilterChipCounts = () => {
 
   const counts = {
     all: dashboardStoreSnapshot.length,
-    "with-execution": dashboardStoreSnapshot.filter((entry) => entry?.hasEnvironment).length,
-    "without-execution": dashboardStoreSnapshot.filter((entry) => !entry?.hasEnvironment).length,
+    "with-execution": dashboardStoreSnapshot.filter(
+      (entry) => entry?.hasEnvironment
+    ).length,
+    "without-execution": dashboardStoreSnapshot.filter(
+      (entry) => !entry?.hasEnvironment
+    ).length,
   };
 
   dashboardFilterCountElements.forEach((element) => {
@@ -288,7 +288,9 @@ const formatLastSynced = (date) => {
 
 const updateDashboardLastSyncedLabel = () => {
   if (!dashboardLastSyncedLabel) return;
-  dashboardLastSyncedLabel.textContent = formatLastSynced(dashboardLastSyncedAt);
+  dashboardLastSyncedLabel.textContent = formatLastSynced(
+    dashboardLastSyncedAt
+  );
 };
 
 const markDashboardSynced = (date = new Date()) => {
@@ -479,14 +481,20 @@ const getAuthErrorMessage = (code = "") => {
     "auth/invalid-email": "Informe um e-mail válido.",
     "auth/missing-email": "Informe um e-mail válido.",
     "auth/user-not-found": "Usuário não encontrado.",
-    "auth/wrong-password": "Senha inválida. Verifique os dados e tente novamente.",
-    "auth/invalid-credential": "Credenciais inválidas. Revise e tente novamente.",
-    "auth/too-many-requests": "Muitas tentativas. Aguarde alguns instantes e tente novamente.",
+    "auth/wrong-password":
+      "Senha inválida. Verifique os dados e tente novamente.",
+    "auth/invalid-credential":
+      "Credenciais inválidas. Revise e tente novamente.",
+    "auth/too-many-requests":
+      "Muitas tentativas. Aguarde alguns instantes e tente novamente.",
     "auth/email-already-in-use": "Este e-mail já está em uso.",
     "auth/weak-password": "Utilize uma senha com pelo menos 6 caracteres.",
-    "auth/network-request-failed": "Não foi possível conectar. Verifique sua internet.",
+    "auth/network-request-failed":
+      "Não foi possível conectar. Verifique sua internet.",
   };
-  return messages[code] || "Não foi possível concluir a operação. Tente novamente.";
+  return (
+    messages[code] || "Não foi possível concluir a operação. Tente novamente."
+  );
 };
 
 const ensureUserDocument = async (user) => {
@@ -531,11 +539,21 @@ authSwitchButtons.forEach((button) => {
     updateFeedback(registerFeedback);
     updateFeedback(resetFeedback);
 
-    if (target === "authReset" && loginEmail && resetEmail && !resetEmail.value) {
+    if (
+      target === "authReset" &&
+      loginEmail &&
+      resetEmail &&
+      !resetEmail.value
+    ) {
       resetEmail.value = loginEmail.value;
     }
 
-    if (target === "authLogin" && registerEmail && loginEmail && registerEmail.value) {
+    if (
+      target === "authLogin" &&
+      registerEmail &&
+      loginEmail &&
+      registerEmail.value
+    ) {
       loginEmail.value = registerEmail.value;
     }
   });
@@ -590,7 +608,11 @@ if (registerForm) {
     updateFeedback(registerFeedback);
     setFormLoading(registerForm, true, "Criando conta...");
     try {
-      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      const credential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
       if (name && credential.user) {
         await updateProfile(credential.user, { displayName: name });
       }
@@ -859,7 +881,9 @@ document.querySelectorAll("[data-modal-close]").forEach((button) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    document.querySelectorAll(".modal.is-open").forEach((modal) => fecharModal(modal));
+    document
+      .querySelectorAll(".modal.is-open")
+      .forEach((modal) => fecharModal(modal));
   }
 });
 
@@ -887,7 +911,8 @@ const renderLojaResumo = () => {
 
   const descricao = (lojaSelecionada.description || "").trim();
   lojaDescricao.textContent =
-    descricao || "Nenhuma descrição cadastrada. Utilize o botão Editar para adicionar um resumo.";
+    descricao ||
+    "Nenhuma descrição cadastrada. Utilize o botão Editar para adicionar um resumo.";
 
   const siteNormalizado = normalizeUrl(lojaSelecionada.site || "");
   if (siteNormalizado) {
@@ -912,18 +937,22 @@ const renderLojaResumo = () => {
 const atualizarLojaSelecionada = (partial = {}) => {
   if (!lojaSelecionada) return;
   const updatedSite =
-    partial.site !== undefined ? normalizeUrl(partial.site) : lojaSelecionada.site;
+    partial.site !== undefined
+      ? normalizeUrl(partial.site)
+      : lojaSelecionada.site;
   lojaSelecionada = {
     ...lojaSelecionada,
     ...partial,
     site: updatedSite || "",
   };
-  if (lojaSelecionada.description === undefined || lojaSelecionada.description === null) {
+  if (
+    lojaSelecionada.description === undefined ||
+    lojaSelecionada.description === null
+  ) {
     lojaSelecionada.description = "";
   }
   renderLojaResumo();
 };
-
 
 const computeDashboardEntry = (store) => {
   if (!store) return null;
@@ -1056,7 +1085,9 @@ const getFilteredDashboardStores = () => {
     .trim();
 
   if (normalizedTerm) {
-    entries = entries.filter((entry) => entry.searchIndex.includes(normalizedTerm));
+    entries = entries.filter((entry) =>
+      entry.searchIndex.includes(normalizedTerm)
+    );
   }
 
   if (dashboardFilterMode === "with-execution") {
@@ -1095,7 +1126,9 @@ const getFilteredDashboardStores = () => {
 
 function updateDashboardStats() {
   if (dashboardStatStores) {
-    dashboardStatStores.textContent = formatCount(dashboardStoreSnapshot.length);
+    dashboardStatStores.textContent = formatCount(
+      dashboardStoreSnapshot.length
+    );
   }
 
   const withExecutions = dashboardStoreSnapshot.filter(
@@ -1167,7 +1200,7 @@ function renderDashboardStores() {
     text.className = "muted";
     text.textContent = hasFiltersActive
       ? "Ajuste os filtros ou limpe a busca para visualizar todas as lojas."
-      : "Clique em "+ Nova Loja" para iniciar sua organização.";
+      : "Clique em  Nova Loja para iniciar sua organização.";
 
     empty.append(title, text);
 
@@ -1288,7 +1321,9 @@ function renderDashboardStores() {
     const activity = document.createElement("span");
     activity.className = "store-card__activity";
     if (entry.lastRun) {
-      activity.textContent = `Última execução: ${formatShortDate(entry.lastRun)}`;
+      activity.textContent = `Última execução: ${formatShortDate(
+        entry.lastRun
+      )}`;
     } else if (entry.hasEnvironment) {
       activity.textContent = "Execuções sem dados registrados";
     } else if (entry.scenariosDefined) {
@@ -1589,7 +1624,6 @@ if (btnDashboardToggleTheme) {
   updateThemeToggleButtonLabel(currentTheme);
 }
 
-
 function clearDashboard() {
   storesCache = [];
   environmentsCache = [];
@@ -1885,7 +1919,10 @@ function renderScenarioFilters(scenarios) {
     scenarioCategoryFilter.appendChild(option);
   });
 
-  if (scenarioCategoryFilterValue !== "all" && !categories.has(scenarioCategoryFilterValue)) {
+  if (
+    scenarioCategoryFilterValue !== "all" &&
+    !categories.has(scenarioCategoryFilterValue)
+  ) {
     scenarioCategoryFilterValue = "all";
   }
 
@@ -2050,7 +2087,9 @@ function parseJsonScenarios(text) {
     if (!input || depth > maxDepth) return null;
 
     if (Array.isArray(input)) {
-      const onlyObjects = input.filter((item) => item && typeof item === "object");
+      const onlyObjects = input.filter(
+        (item) => item && typeof item === "object"
+      );
       if (onlyObjects.length && onlyObjects.length === input.length) {
         return onlyObjects;
       }
@@ -2059,7 +2098,14 @@ function parseJsonScenarios(text) {
 
     if (typeof input !== "object") return null;
 
-    const preferredKeys = ["scenarios", "cenarios", "data", "items", "lista", "results"];
+    const preferredKeys = [
+      "scenarios",
+      "cenarios",
+      "data",
+      "items",
+      "lista",
+      "results",
+    ];
     for (const key of preferredKeys) {
       if (input[key] !== undefined) {
         const found = findScenarioArray(input[key], depth + 1);
@@ -2115,9 +2161,7 @@ function sanitizeScenarioInput(raw) {
   );
 
   const cluster = toText(
-    normalized.cluster ||
-      normalized.plataforma ||
-      normalized.platform
+    normalized.cluster || normalized.plataforma || normalized.platform
   );
 
   const obs = toText(
@@ -2145,10 +2189,9 @@ async function handleScenarioImport(type, file) {
 
   try {
     const text = await file.text();
-    const rawItems = type === "csv" ? parseCsvScenarios(text) : parseJsonScenarios(text);
-    const scenariosToAdd = rawItems
-      .map(sanitizeScenarioInput)
-      .filter(Boolean);
+    const rawItems =
+      type === "csv" ? parseCsvScenarios(text) : parseJsonScenarios(text);
+    const scenariosToAdd = rawItems.map(sanitizeScenarioInput).filter(Boolean);
 
     if (!scenariosToAdd.length) {
       alert("Não encontramos cenários válidos no arquivo selecionado.");
@@ -2173,7 +2216,9 @@ async function handleScenarioImport(type, file) {
     loadCenariosTabela(lojaSelecionada.id);
   } catch (error) {
     console.error("Erro ao importar cenários:", error);
-    alert("Não foi possível importar os cenários. Verifique o arquivo e tente novamente.");
+    alert(
+      "Não foi possível importar os cenários. Verifique o arquivo e tente novamente."
+    );
   }
 }
 
@@ -2184,7 +2229,9 @@ const getGlobalJsPdfConstructor = () => {
     globalThis.jsPDF?.jsPDF,
     globalThis.jsPDF,
   ];
-  return candidates.find((candidate) => typeof candidate === "function") || null;
+  return (
+    candidates.find((candidate) => typeof candidate === "function") || null
+  );
 };
 
 const loadExternalScript = (source) => {
@@ -2326,9 +2373,7 @@ function exportScenariosAsMarkdown() {
           sc.category || "-"
         )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
           sc.cluster || "-"
-        )} | ${escapeMarkdownCell(
-          sc.obs || ""
-        )} |`
+        )} | ${escapeMarkdownCell(sc.obs || "")} |`
     ),
   ];
 
@@ -2562,7 +2607,8 @@ function loadAmbientes(storeId) {
         title.textContent = "Nenhum ambiente criado";
         const text = document.createElement("p");
         text.className = "muted";
-        text.textContent = "Crie o primeiro ambiente para acompanhar execuções.";
+        text.textContent =
+          "Crie o primeiro ambiente para acompanhar execuções.";
         const action = document.createElement("button");
         action.className = "ghost";
         action.textContent = "Criar ambiente";
@@ -2627,7 +2673,8 @@ function renderAmbiente() {
   ambienteIdentifier.textContent = env.identifier || "—";
   ambienteTestType.textContent = env.testType || "—";
   ambienteTotalCenarios.textContent = env.scenarios?.length || 0;
-  ambienteNotes.textContent = env.notes || "Nenhuma observação registrada para este ambiente.";
+  ambienteNotes.textContent =
+    env.notes || "Nenhuma observação registrada para este ambiente.";
   ambienteNotes.classList.toggle("muted", !env.notes);
 
   cenariosExecucao.innerHTML = "";
@@ -2691,13 +2738,16 @@ function renderAmbiente() {
       const envId = ambienteSelecionado?.id;
       if (!envId) return;
 
-      const atualizados = (ambienteSelecionado.scenarios || []).map((item, index) =>
-        index === idx ? { ...item, status: novoStatus } : item
+      const atualizados = (ambienteSelecionado.scenarios || []).map(
+        (item, index) =>
+          index === idx ? { ...item, status: novoStatus } : item
       );
 
       select.disabled = true;
       try {
-        await updateDoc(doc(db, "environments", envId), { scenarios: atualizados });
+        await updateDoc(doc(db, "environments", envId), {
+          scenarios: atualizados,
+        });
       } catch (error) {
         console.error("Erro ao atualizar status:", error);
       } finally {
