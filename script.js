@@ -97,14 +97,6 @@ const statusLabels = {
   concluido: "Concluído",
 };
 
-const DEFAULT_SCENARIO_STAGE = "pre-deploy";
-
-const scenarioStageLabels = {
-  "pre-deploy": "Pré-deploy",
-  "pos-deploy": "Pós-deploy",
-  regressivo: "Regressivo",
-};
-
 const removeDiacritics = (value) => {
   if (value === undefined || value === null) return "";
   return String(value)
@@ -116,22 +108,6 @@ const toText = (value) => {
   if (value === undefined || value === null) return "";
   return String(value).trim();
 };
-
-const normalizeScenarioStage = (value) => {
-  const normalized = removeDiacritics(value)
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!normalized) return DEFAULT_SCENARIO_STAGE;
-  if (normalized.includes("pos")) return "pos-deploy";
-  if (normalized.includes("regress")) return "regressivo";
-  return DEFAULT_SCENARIO_STAGE;
-};
-
-const getScenarioStageLabel = (value) =>
-  scenarioStageLabels[normalizeScenarioStage(value)] ||
-  scenarioStageLabels[DEFAULT_SCENARIO_STAGE];
 
 const normalizeCategoryKey = (value) =>
   removeDiacritics(value)
@@ -596,18 +572,123 @@ const scenarioCategory = el("scenarioCategory");
 const scenarioAutomation = el("scenarioAutomation");
 const scenarioCluster = el("scenarioCluster");
 const scenarioObs = el("scenarioObs");
-const scenarioStage = el("scenarioStage");
 const scenarioCategoryFilter = el("scenarioCategoryFilter");
 const btnImportCsv = el("btnImportCsv");
 const btnImportJson = el("btnImportJson");
 const btnExportMarkdown = el("btnExportMarkdown");
 const btnExportPdf = el("btnExportPdf");
 const scenarioImportInput = el("scenarioImportInput");
+const scenarioPackagesList = el("scenarioPackages");
 
 if (scenarioCategoryFilter) {
   scenarioCategoryFilter.value = "all";
   scenarioCategoryFilter.disabled = true;
 }
+
+const scenarioPackagesData = [
+  {
+    id: "pre-deploy",
+    name: "Pré-Deploy",
+    moment:
+      "Após a homologação e antes da liberação em produção para validar a versão final.",
+    objectives: [
+      "Garantir que fluxos críticos estejam íntegros em ambiente espelhado à produção.",
+      "Confirmar integrações externas, jobs e configurações finais antes do go-live.",
+      "Assegurar que monitoramentos e alertas estejam preparados para a virada.",
+    ],
+    examples: [
+      {
+        title: "Checkout ponta a ponta com pagamento oficial",
+        category: "Checkout",
+        automation: "Não Automatizado",
+        cluster: "Desktop",
+        obs: "Simular compra real utilizando o gateway definitivo e acompanhar e-mails/alertas de pedido.",
+      },
+      {
+        title: "Fluxo de login e recuperação de acesso em produção simulada",
+        category: "Autenticação",
+        automation: "Não Automatizado",
+        cluster: "Ambos",
+        obs: "Validar cadastro, reset de senha e políticas de bloqueio utilizando dados produtivos mascarados.",
+      },
+      {
+        title: "Smoke de integrações críticas de release",
+        category: "Integrações",
+        automation: "Não Automatizado",
+        cluster: "Ambos",
+        obs: "Verificar comunicação com ERP, antifraude e parceiros logísticos após a configuração final do release.",
+      },
+    ],
+  },
+  {
+    id: "pre-regressivo",
+    name: "Pré-Regressivo",
+    moment:
+      "Antes do ciclo completo de regressão para checar a estabilidade das jornadas base.",
+    objectives: [
+      "Detectar regressões graves nas principais jornadas antes de iniciar o ciclo massivo.",
+      "Validar regras de negócio prioritárias que sustentam os testes regressivos.",
+      "Conferir se integrações e dados de apoio estão prontos para o ciclo completo.",
+    ],
+    examples: [
+      {
+        title: "Assinatura recorrente com renovação automática",
+        category: "Assinaturas",
+        automation: "Automatizado",
+        cluster: "Desktop",
+        obs: "Executar script que cria assinatura, força renovação e valida faturamento e comunicação com billing.",
+      },
+      {
+        title: "Regra de promoção prioritária aplicada ao carrinho",
+        category: "Promoções",
+        automation: "Não Automatizado",
+        cluster: "Ambos",
+        obs: "Validar cálculo de descontos, limites e combinatórias de cupons antes da regressão ampla.",
+      },
+      {
+        title: "Sincronização de pedidos com ERP pré-regressão",
+        category: "Integrações",
+        automation: "Não Automatizado",
+        cluster: "Ambos",
+        obs: "Gerar pedido de teste e acompanhar atualização de status e estoque no ERP para garantir dados consistentes.",
+      },
+    ],
+  },
+  {
+    id: "progressivo",
+    name: "Progressivo",
+    moment:
+      "Durante o desenvolvimento contínuo, aplicado a cada entrega para feedback rápido.",
+    objectives: [
+      "Dar visibilidade imediata sobre impactos de histórias recém-desenvolvidas.",
+      "Cobrir rapidamente fluxos essenciais com smoke automatizado recorrente.",
+      "Estimular ciclos de testes exploratórios curtos que alimentem o backlog de correções.",
+    ],
+    examples: [
+      {
+        title: "Smoke automatizado diário de login e checkout",
+        category: "Smoke",
+        automation: "Automatizado",
+        cluster: "Ambos",
+        obs: "Executar pipeline diária que valida autenticação, busca de produtos e checkout básico em menos de 10 minutos.",
+      },
+      {
+        title: "Revisão funcional da história priorizada no sprint",
+        category: "Funcional",
+        automation: "Não Automatizado",
+        cluster: "Desktop",
+        obs: "Validar critérios de aceite da story recém finalizada garantindo cobertura das principais regras de negócio.",
+      },
+      {
+        title: "Exploratório guiado em recurso recém habilitado",
+        category: "Exploratório",
+        automation: "Não Automatizado",
+        cluster: "Mobile",
+        obs: "Conduzir sessão exploratória curta com mind map de riscos focando usabilidade e aderência em dispositivos móveis.",
+      },
+    ],
+  },
+];
 
 const storeForm = el("storeForm");
 const storeFormTitle = el("storeFormTitle");
@@ -817,10 +898,10 @@ const abrirLoja = (id, data) => {
     description: data.description || "",
     site: normalizeUrl(data.site || ""),
     scenarios: Array.isArray(data.scenarios)
-      ? data.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
-        }))
+      ? data.scenarios.map((sc) => {
+          const { stage, ...rest } = sc || {};
+          return { ...rest };
+        })
       : [],
     scenarioCount: Array.isArray(data.scenarios) ? data.scenarios.length : 0,
     environmentCount: 0,
@@ -945,25 +1026,21 @@ scenarioForm.addEventListener("submit", async (event) => {
     automation: scenarioAutomation.value,
     cluster: scenarioCluster.value,
     obs: scenarioObs.value.trim(),
-    stage: normalizeScenarioStage(scenarioStage?.value),
   };
 
   const ref = doc(db, "stores", lojaSelecionada.id);
   const snap = await getDoc(ref);
   const data = snap.data();
   const arr = Array.isArray(data?.scenarios)
-    ? data.scenarios.map((item) => ({
-        ...item,
-        stage: normalizeScenarioStage(item.stage),
-      }))
+    ? data.scenarios.map((item) => {
+        const { stage, ...rest } = item || {};
+        return { ...rest };
+      })
     : [];
   arr.push(scenario);
 
   await updateDoc(ref, { scenarios: arr, scenarioCount: arr.length });
   scenarioForm.reset();
-  if (scenarioStage) {
-    scenarioStage.value = DEFAULT_SCENARIO_STAGE;
-  }
   loadCenariosTabela(lojaSelecionada.id);
 });
 
@@ -983,7 +1060,6 @@ async function loadCenariosTabela(id) {
         <th>Categoria</th>
         <th>Automação</th>
         <th>Cluster</th>
-        <th>Fase</th>
         <th>Observações</th>
         <th></th>
       </tr>
@@ -992,10 +1068,10 @@ async function loadCenariosTabela(id) {
   `;
 
   const scenarios = Array.isArray(data.scenarios)
-    ? data.scenarios.map((sc) => ({
-        ...sc,
-        stage: normalizeScenarioStage(sc.stage),
-      }))
+    ? data.scenarios.map((sc) => {
+        const { stage, ...rest } = sc || {};
+        return { ...rest };
+      })
     : [];
 
   lojaSelecionada = {
@@ -1070,7 +1146,7 @@ function renderScenarioTableRows(scenarios) {
   if (!filtered.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 6;
     cell.className = "empty";
     const hasScenarios = Array.isArray(scenarios) && scenarios.length > 0;
     cell.textContent = hasScenarios
@@ -1097,12 +1173,6 @@ function renderScenarioTableRows(scenarios) {
 
     const cellCluster = document.createElement("td");
     cellCluster.textContent = sc.cluster || "-";
-
-    const cellStage = document.createElement("td");
-    const stageBadge = document.createElement("span");
-    stageBadge.className = "tag";
-    stageBadge.textContent = getScenarioStageLabel(sc.stage);
-    cellStage.appendChild(stageBadge);
 
     const cellObs = document.createElement("td");
     cellObs.textContent = sc.obs || "";
@@ -1138,7 +1208,6 @@ function renderScenarioTableRows(scenarios) {
       cellCategoria,
       cellAuto,
       cellCluster,
-      cellStage,
       cellObs,
       cellActions
     );
@@ -1149,6 +1218,195 @@ function renderScenarioTableRows(scenarios) {
 const updateScenarioTable = () => {
   renderScenarioTableRows(lojaSelecionada?.scenarios || []);
 };
+
+async function applyScenarioPackage(pkg) {
+  if (!lojaSelecionada) {
+    alert("Selecione uma loja para adicionar o pacote de cenários.");
+    return;
+  }
+
+  if (!pkg || !Array.isArray(pkg.examples) || !pkg.examples.length) {
+    alert("Este pacote ainda não possui cenários cadastrados.");
+    return;
+  }
+
+  try {
+    const ref = doc(db, "stores", lojaSelecionada.id);
+    const snap = await getDoc(ref);
+    const data = snap.data();
+
+    const current = Array.isArray(data?.scenarios)
+      ? data.scenarios.map((item) => {
+          const { stage, ...rest } = item || {};
+          const automation =
+            rest.automation === "Automatizado" || rest.automation === "Não Automatizado"
+              ? rest.automation
+              : "Não Automatizado";
+          const cluster =
+            rest.cluster === "Desktop" || rest.cluster === "Mobile" || rest.cluster === "Ambos"
+              ? rest.cluster
+              : "Ambos";
+          return {
+            ...rest,
+            title: toText(rest.title),
+            category: toText(rest.category),
+            automation,
+            cluster,
+            obs: toText(rest.obs),
+          };
+        })
+      : [];
+
+    const existingKeys = new Set(
+      current.map((sc) => {
+        const titleKey = toText(sc.title).toLowerCase();
+        const categoryKey = toText(sc.category).toLowerCase();
+        return `${titleKey}|${categoryKey}`;
+      })
+    );
+
+    const scenariosToAdd = pkg.examples
+      .map((example) => {
+        const automation =
+          example.automation === "Automatizado" ? "Automatizado" : "Não Automatizado";
+        const cluster =
+          example.cluster === "Desktop" || example.cluster === "Mobile" || example.cluster === "Ambos"
+            ? example.cluster
+            : "Ambos";
+        return {
+          title: toText(example.title),
+          category: toText(example.category),
+          automation,
+          cluster,
+          obs: toText(example.obs),
+        };
+      })
+      .filter((example) => {
+        if (!example.title) return false;
+        const key = `${example.title.toLowerCase()}|${example.category.toLowerCase()}`;
+        if (existingKeys.has(key)) {
+          return false;
+        }
+        existingKeys.add(key);
+        return true;
+      });
+
+    if (!scenariosToAdd.length) {
+      alert("Todos os cenários deste pacote já estão cadastrados para esta loja.");
+      return;
+    }
+
+    const merged = [...current, ...scenariosToAdd];
+
+    await updateDoc(ref, {
+      scenarios: merged,
+      scenarioCount: merged.length,
+    });
+
+    const count = scenariosToAdd.length;
+    alert(
+      `${count} ${count === 1 ? "cenário" : "cenários"} adicionados do pacote ${pkg.name}.`
+    );
+    loadCenariosTabela(lojaSelecionada.id);
+  } catch (error) {
+    console.error("Erro ao aplicar pacote de cenários:", error);
+    alert("Não foi possível adicionar os cenários do pacote. Tente novamente.");
+  }
+}
+
+function renderScenarioPackages() {
+  if (!scenarioPackagesList) return;
+
+  scenarioPackagesList.innerHTML = "";
+
+  scenarioPackagesData.forEach((pkg) => {
+    const card = document.createElement("article");
+    card.className = "scenario-package";
+
+    const title = document.createElement("h4");
+    title.textContent = pkg.name;
+    card.appendChild(title);
+
+    const moment = document.createElement("p");
+    moment.className = "scenario-package__moment";
+    const momentLabel = document.createElement("strong");
+    momentLabel.textContent = "Momento";
+    moment.append(momentLabel, document.createTextNode(`: ${pkg.moment}`));
+    card.appendChild(moment);
+
+    const objectivesSection = document.createElement("div");
+    objectivesSection.className = "scenario-package__section";
+    const objectivesTitle = document.createElement("span");
+    objectivesTitle.className = "scenario-package__section-title";
+    objectivesTitle.textContent = "Objetivos";
+    objectivesSection.appendChild(objectivesTitle);
+
+    const objectivesList = document.createElement("ul");
+    objectivesList.className = "scenario-package__list";
+    (Array.isArray(pkg.objectives) ? pkg.objectives : []).forEach((objective) => {
+      const item = document.createElement("li");
+      item.textContent = objective;
+      objectivesList.appendChild(item);
+    });
+    objectivesSection.appendChild(objectivesList);
+    card.appendChild(objectivesSection);
+
+    const examplesSection = document.createElement("div");
+    examplesSection.className = "scenario-package__section";
+    const examplesTitle = document.createElement("span");
+    examplesTitle.className = "scenario-package__section-title";
+    examplesTitle.textContent = "Exemplos de cenários";
+    examplesSection.appendChild(examplesTitle);
+
+    const examplesList = document.createElement("ul");
+    examplesList.className = "scenario-package__list scenario-package__examples";
+
+    (Array.isArray(pkg.examples) ? pkg.examples : []).forEach((example) => {
+      const item = document.createElement("li");
+
+      const exampleTitle = document.createElement("strong");
+      exampleTitle.textContent = example.title;
+      item.appendChild(exampleTitle);
+
+      const metaParts = [example.category, example.automation, example.cluster]
+        .map((part) => toText(part))
+        .filter((part) => part);
+
+      if (metaParts.length) {
+        const meta = document.createElement("span");
+        meta.className = "scenario-package__meta";
+        meta.textContent = metaParts.join(" • ");
+        item.appendChild(meta);
+      }
+
+      const noteText = toText(example.obs);
+      if (noteText) {
+        const note = document.createElement("p");
+        note.className = "scenario-package__note";
+        note.textContent = noteText;
+        item.appendChild(note);
+      }
+
+      examplesList.appendChild(item);
+    });
+
+    examplesSection.appendChild(examplesList);
+    card.appendChild(examplesSection);
+
+    const actions = document.createElement("div");
+    actions.className = "scenario-package__actions";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary";
+    const count = Array.isArray(pkg.examples) ? pkg.examples.length : 0;
+    button.textContent = `Adicionar ${count} ${count === 1 ? "cenário" : "cenários"}`;
+    button.addEventListener("click", () => applyScenarioPackage(pkg));
+    actions.appendChild(button);
+    card.appendChild(actions);
+
+    scenarioPackagesList.appendChild(card);
+  });
+}
 
 function splitCsvLine(line, delimiter) {
   const result = [];
@@ -1263,16 +1521,12 @@ function sanitizeScenarioInput(raw) {
       normalized.notes
   );
 
-  const stageRaw =
-    normalized.fase || normalized.stage || normalized.etapa || normalized.ciclo;
-
   return {
     title,
     category,
     automation,
     cluster,
     obs,
-    stage: normalizeScenarioStage(stageRaw),
   };
 }
 
@@ -1298,10 +1552,10 @@ async function handleScenarioImport(type, file) {
     const snap = await getDoc(ref);
     const data = snap.data() || {};
     const current = Array.isArray(data.scenarios)
-      ? data.scenarios.map((item) => ({
-          ...item,
-          stage: normalizeScenarioStage(item.stage),
-        }))
+      ? data.scenarios.map((item) => {
+          const { stage, ...rest } = item || {};
+          return { ...rest };
+        })
       : [];
 
     const merged = [...current, ...scenariosToAdd];
@@ -1346,17 +1600,15 @@ function exportScenariosAsMarkdown() {
   const lines = [
     `# Cenários - ${lojaSelecionada.name || "Loja"}`,
     "",
-    "| Título | Categoria | Automação | Cluster | Fase | Observações |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Título | Categoria | Automação | Cluster | Observações |",
+    "| --- | --- | --- | --- | --- |",
     ...scenarios.map(
       (sc) =>
         `| ${escapeMarkdownCell(sc.title || "-")} | ${escapeMarkdownCell(
           sc.category || "-"
         )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
           sc.cluster || "-"
-        )} | ${escapeMarkdownCell(getScenarioStageLabel(sc.stage))} | ${escapeMarkdownCell(
-          sc.obs || ""
-        )} |`
+        )} | ${escapeMarkdownCell(sc.obs || "")} |`
     ),
   ];
 
@@ -1403,7 +1655,6 @@ async function exportScenariosAsPdf() {
         `Categoria: ${sc.category || "-"}`,
         `Automação: ${sc.automation || "-"}`,
         `Cluster: ${sc.cluster || "-"}`,
-        `Fase: ${getScenarioStageLabel(sc.stage)}`,
       ];
 
       if (sc.obs) {
@@ -1477,6 +1728,10 @@ if (btnExportPdf) {
   });
 }
 
+if (scenarioPackagesList) {
+  renderScenarioPackages();
+}
+
 el("btnNovoAmbiente").addEventListener("click", () => {
   if (!lojaSelecionada) return;
   environmentForm.reset();
@@ -1500,11 +1755,10 @@ environmentForm.addEventListener("submit", async (event) => {
     const snap = await getDoc(sRef);
     const data = snap.data() || lojaSelecionada;
     const scenarios = Array.isArray(data.scenarios)
-      ? data.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
-          status: "pendente",
-        }))
+      ? data.scenarios.map((sc) => {
+          const { stage, ...rest } = sc || {};
+          return { ...rest, status: "pendente" };
+        })
       : [];
 
     await addDoc(collection(db, "environments"), {
@@ -1608,10 +1862,10 @@ function abrirAmbiente(env, id) {
     id,
     ...env,
     scenarios: Array.isArray(env.scenarios)
-      ? env.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
-        }))
+      ? env.scenarios.map((sc) => {
+          const { stage, ...rest } = sc || {};
+          return { ...rest };
+        })
       : [],
   };
   renderAmbiente();
@@ -1631,10 +1885,10 @@ function abrirAmbiente(env, id) {
       id: snap.id,
       ...data,
       scenarios: Array.isArray(data.scenarios)
-        ? data.scenarios.map((sc) => ({
-            ...sc,
-            stage: normalizeScenarioStage(sc.stage),
-          }))
+        ? data.scenarios.map((sc) => {
+            const { stage, ...rest } = sc || {};
+            return { ...rest };
+          })
         : [],
     };
     renderAmbiente();
@@ -1685,12 +1939,7 @@ function renderAmbiente() {
 
     const meta = document.createElement("span");
     meta.className = "scenario-meta";
-    const details = [
-      getScenarioStageLabel(sc.stage),
-      sc.category,
-      sc.cluster,
-      sc.automation,
-    ]
+    const details = [sc.category, sc.cluster, sc.automation]
       .filter(Boolean)
       .join(" • ");
     meta.textContent = details || "Detalhes não informados";
