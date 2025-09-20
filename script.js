@@ -583,6 +583,7 @@ const btnImportCsv = el("btnImportCsv");
 const btnImportJson = el("btnImportJson");
 const btnExportMarkdown = el("btnExportMarkdown");
 const btnExportPdf = el("btnExportPdf");
+const btnExportJson = el("btnExportJson");
 const scenarioImportInput = el("scenarioImportInput");
 
 if (scenarioCategoryFilter) {
@@ -1275,29 +1276,67 @@ async function handleScenarioImport(type, file) {
 async function loadJsPDF() {
   if (jsPDFConstructor) return jsPDFConstructor;
   const module = await import(
-    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
+    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js"
   );
-  jsPDFConstructor = module.jsPDF || (module.default && module.default.jsPDF) || module.default;
+  jsPDFConstructor = module?.jsPDF;
   if (typeof jsPDFConstructor !== "function") {
     throw new Error("jsPDF não carregado");
   }
   return jsPDFConstructor;
 }
 
-function exportScenariosAsMarkdown() {
+function getScenarioExportContext() {
   if (!lojaSelecionada) {
     alert("Abra uma loja para exportar os cenários.");
-    return;
+    return null;
   }
 
-  const scenarios = getFilteredScenarios(lojaSelecionada.scenarios || []);
-  if (!scenarios.length) {
+  const rawScenarios = getFilteredScenarios(lojaSelecionada.scenarios || []);
+  if (!rawScenarios.length) {
     alert("Não há cenários disponíveis para exportação com o filtro atual.");
-    return;
+    return null;
   }
+
+  const storeName = toText(lojaSelecionada.name) || "Loja";
+  const scenarios = rawScenarios.map((scenario) => ({
+    title: toText(scenario.title),
+    category: toText(scenario.category),
+    automation: toText(scenario.automation),
+    cluster: toText(scenario.cluster),
+    obs: toText(scenario.obs),
+  }));
+
+  const store = {
+    id: lojaSelecionada.id || "",
+    name: storeName,
+    scenarioCount: scenarios.length,
+  };
+
+  const description = toText(lojaSelecionada.description);
+  if (description) {
+    store.description = description;
+  }
+
+  const site = normalizeUrl(lojaSelecionada.site);
+  if (site) {
+    store.site = site;
+  }
+
+  return {
+    store,
+    scenarios,
+    filenameSlug: slugify(storeName),
+  };
+}
+
+function exportScenariosAsMarkdown() {
+  const context = getScenarioExportContext();
+  if (!context) return;
+
+  const { store, scenarios, filenameSlug } = context;
 
   const lines = [
-    `# Cenários - ${lojaSelecionada.name || "Loja"}`,
+    `# Cenários - ${store.name}`,
     "",
     "| Título | Categoria | Automação | Cluster | Observações |",
     "| --- | --- | --- | --- | --- |",
@@ -1307,52 +1346,51 @@ function exportScenariosAsMarkdown() {
           sc.category || "-"
         )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
           sc.cluster || "-"
-        )} | ${escapeMarkdownCell(
-          sc.obs || ""
-        )} |`
+        )} | ${escapeMarkdownCell(sc.obs || "")} |`
     ),
   ];
 
   downloadFile(
     lines.join("\n"),
-    `cenarios-${slugify(lojaSelecionada.name || "loja")}.md`,
+    `cenarios-${filenameSlug}.md`,
     "text/markdown;charset=utf-8"
   );
 }
 
 async function exportScenariosAsPdf() {
-  if (!lojaSelecionada) {
-    alert("Abra uma loja para exportar os cenários.");
-    return;
-  }
+  const context = getScenarioExportContext();
+  if (!context) return;
 
-  const scenarios = getFilteredScenarios(lojaSelecionada.scenarios || []);
-  if (!scenarios.length) {
-    alert("Não há cenários disponíveis para exportação com o filtro atual.");
-    return;
-  }
+  const { store, scenarios, filenameSlug } = context;
 
   try {
     const JsPDF = await loadJsPDF();
-    const pdf = new JsPDF();
-    pdf.setFontSize(16);
-    pdf.text(`Cenários - ${lojaSelecionada.name || "Loja"}`, 14, 20);
-    pdf.setFontSize(12);
+    const pdf = new JsPDF({ unit: "mm", format: "a4" });
+    pdf.setFont("helvetica", "normal");
 
-    let y = 30;
     const lineHeight = 6;
     const maxY = 280;
+    let y = 30;
+
+    const addHeader = () => {
+      pdf.setFontSize(16);
+      pdf.text(`Cenários - ${store.name}`, 14, 20);
+      pdf.setFontSize(12);
+      y = 30;
+    };
 
     const ensureSpace = (lines = 1) => {
       if (y + lineHeight * lines > maxY) {
         pdf.addPage();
-        y = 20;
+        addHeader();
       }
     };
 
+    addHeader();
+
     scenarios.forEach((sc, index) => {
       const entries = [
-        `${index + 1}. ${toText(sc.title) || "Cenário"}`,
+        `${index + 1}. ${sc.title || "Cenário"}`,
         `Categoria: ${sc.category || "-"}`,
         `Automação: ${sc.automation || "-"}`,
         `Cluster: ${sc.cluster || "-"}`,
@@ -1373,11 +1411,29 @@ async function exportScenariosAsPdf() {
       });
     });
 
-    pdf.save(`cenarios-${slugify(lojaSelecionada.name || "loja")}.pdf`);
+    pdf.save(`cenarios-${filenameSlug}.pdf`);
   } catch (error) {
     console.error("Erro ao exportar cenários em PDF:", error);
     alert("Não foi possível exportar os cenários em PDF. Tente novamente.");
   }
+}
+
+function exportScenariosAsJson() {
+  const context = getScenarioExportContext();
+  if (!context) return;
+
+  const { store, scenarios, filenameSlug } = context;
+  const payload = {
+    store,
+    exportedAt: new Date().toISOString(),
+    scenarios,
+  };
+
+  downloadFile(
+    JSON.stringify(payload, null, 2),
+    `cenarios-${filenameSlug}.json`,
+    "application/json;charset=utf-8"
+  );
 }
 
 if (scenarioCategoryFilter) {
@@ -1427,6 +1483,10 @@ if (btnExportPdf) {
   btnExportPdf.addEventListener("click", () => {
     exportScenariosAsPdf();
   });
+}
+
+if (btnExportJson) {
+  btnExportJson.addEventListener("click", exportScenariosAsJson);
 }
 
 el("btnNovoAmbiente").addEventListener("click", () => {
