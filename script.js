@@ -52,6 +52,9 @@ let userProfileData = { displayName: "", email: "", theme: currentTheme };
 let lastMainView = "secDashboard";
 let previousViewBeforeProfile = "secDashboard";
 let unsubscribeDashboard = null;
+let unsubscribeCoverage = null;
+let storesCache = [];
+let environmentsCache = [];
 
 let lojaSelecionada = null;
 let ambienteSelecionado = null;
@@ -133,6 +136,32 @@ const escapeMarkdownCell = (value) =>
     .replace(/\|/g, "\\|")
     .replace(/\r?\n/g, "<br>");
 
+const toDateOrNull = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return new Date(value);
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === "object" && typeof value.seconds === "number") {
+    const millis = value.seconds * 1000 + (value.nanoseconds || 0) / 1e6;
+    return new Date(millis);
+  }
+  return null;
+};
+
+const formatShortDate = (value) => {
+  const date = toDateOrNull(value);
+  if (!date) return "";
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
 const downloadFile = (content, filename, mimeType) => {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -152,6 +181,9 @@ const userDisplayName = el("userDisplayName");
 const btnOpenProfile = el("btnOpenProfile");
 const btnSignOut = el("btnSignOut");
 const btnProfileBack = el("btnProfileBack");
+const dashboardStoresContainer = el("dashboardStores");
+const dashboardCoverageList = el("dashboardCoverageList");
+const dashboardCoverageSummary = el("dashboardCoverageSummary");
 
 const loginForm = el("loginForm");
 const loginEmail = el("loginEmail");
@@ -548,6 +580,10 @@ onAuthStateChanged(auth, async (user) => {
       unsubscribeAmbiente();
       unsubscribeAmbiente = null;
     }
+    if (unsubscribeCoverage) {
+      unsubscribeCoverage();
+      unsubscribeCoverage = null;
+    }
 
     lojaSelecionada = null;
     ambienteSelecionado = null;
@@ -711,71 +747,302 @@ const atualizarLojaSelecionada = (partial = {}) => {
   renderLojaResumo();
 };
 
-const clearDashboard = () => {
-  const dash = el("dashboardStores");
-  if (dash) {
-    dash.innerHTML = "";
+function renderDashboardStores() {
+  if (!dashboardStoresContainer) return;
+
+  dashboardStoresContainer.innerHTML = "";
+
+  if (!storesCache.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+
+    const title = document.createElement("h3");
+    title.textContent = "Nenhuma loja cadastrada";
+
+    const text = document.createElement("p");
+    text.className = "muted";
+    text.textContent = "Clique em \"+ Nova Loja\" para iniciar sua organização.";
+
+    empty.append(title, text);
+    dashboardStoresContainer.appendChild(empty);
+    return;
   }
+
+  storesCache.forEach((store) => {
+    const card = document.createElement("article");
+    card.className = "store-card";
+
+    const header = document.createElement("div");
+    header.className = "store-card__header";
+
+    const title = document.createElement("strong");
+    title.className = "store-card__title";
+    title.textContent = store.name || "Loja";
+
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    const scenarioCount = Array.isArray(store.scenarios)
+      ? store.scenarios.length
+      : typeof store.scenarioCount === "number"
+      ? store.scenarioCount
+      : 0;
+    badge.textContent = `${scenarioCount} cenários`;
+
+    header.append(title, badge);
+    card.appendChild(header);
+
+    const site = document.createElement("span");
+    site.className = "muted";
+    site.textContent =
+      formatUrlLabel(store.site || "") || "Nenhum site cadastrado";
+    card.appendChild(site);
+
+    const descriptionText = toText(store.description);
+    if (descriptionText) {
+      const desc = document.createElement("p");
+      desc.className = "scenario-note";
+      desc.textContent = descriptionText;
+      card.appendChild(desc);
+    }
+
+    card.addEventListener("click", () => abrirLoja(store.id, store));
+
+    dashboardStoresContainer.appendChild(card);
+  });
+}
+
+function updateTestCoverageCard() {
+  if (!dashboardCoverageList) return;
+
+  dashboardCoverageList.innerHTML = "";
+
+  if (!storesCache.length) {
+    const empty = document.createElement("div");
+    empty.className = "coverage-empty";
+    empty.textContent = "Cadastre uma loja para acompanhar a cobertura.";
+    dashboardCoverageList.appendChild(empty);
+    if (dashboardCoverageSummary) {
+      dashboardCoverageSummary.textContent = "Média geral: 0%";
+    }
+    return;
+  }
+
+  const coverageData = storesCache.map((store) => {
+    const storeEnvironments = environmentsCache.filter(
+      (env) => env.storeId === store.id
+    );
+
+    const latestEnvironment = storeEnvironments.reduce((latest, env) => {
+      const latestDate = toDateOrNull(latest?.updatedAt || latest?.createdAt);
+      const envDate = toDateOrNull(env?.updatedAt || env?.createdAt);
+      const latestMillis = latestDate ? latestDate.getTime() : 0;
+      const envMillis = envDate ? envDate.getTime() : 0;
+      return envMillis > latestMillis ? env : latest;
+    }, null);
+
+    const definedTotal = Array.isArray(store.scenarios)
+      ? store.scenarios.length
+      : typeof store.scenarioCount === "number"
+      ? store.scenarioCount
+      : 0;
+
+    let total = 0;
+    let done = 0;
+    let running = 0;
+    let pending = 0;
+    let environmentLabel = "";
+    let lastRun = null;
+    let hasEnvironment = false;
+
+    if (latestEnvironment && Array.isArray(latestEnvironment.scenarios)) {
+      const envScenarios = latestEnvironment.scenarios;
+      total = envScenarios.length;
+      envScenarios.forEach((scenario) => {
+        const status = toText(scenario.status).toLowerCase();
+        if (status === "concluido") {
+          done += 1;
+        } else if (status === "andamento") {
+          running += 1;
+        } else {
+          pending += 1;
+        }
+      });
+      pending = Math.max(total - done - running, 0);
+      hasEnvironment = true;
+      environmentLabel = [
+        latestEnvironment.kind,
+        latestEnvironment.identifier || latestEnvironment.testType,
+      ]
+        .filter(Boolean)
+        .join(" • ");
+      lastRun = latestEnvironment.updatedAt || latestEnvironment.createdAt || null;
+    } else {
+      total = definedTotal;
+      pending = total;
+    }
+
+    const coverage = total ? Math.round((done / total) * 100) : 0;
+
+    return {
+      id: store.id,
+      name: store.name || "Loja",
+      coverage,
+      total,
+      done,
+      running,
+      pending: Math.max(pending, 0),
+      environmentLabel,
+      lastRun,
+      hasEnvironment,
+    };
+  });
+
+  coverageData.sort((a, b) => {
+    if (b.coverage !== a.coverage) return b.coverage - a.coverage;
+    if (b.total !== a.total) return b.total - a.total;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+
+  let considered = 0;
+  let sumCoverage = 0;
+
+  coverageData.forEach((item) => {
+    if (item.total > 0) {
+      considered += 1;
+      sumCoverage += item.coverage;
+    }
+
+    const row = document.createElement("div");
+    row.className = "coverage-row";
+
+    const header = document.createElement("div");
+    header.className = "coverage-row__header";
+
+    const name = document.createElement("strong");
+    name.className = "coverage-row__name";
+    name.textContent = item.name;
+
+    const value = document.createElement("span");
+    value.className = "coverage-row__value";
+    value.textContent = `${item.coverage}%`;
+
+    header.append(name, value);
+    row.appendChild(header);
+
+    const progress = document.createElement("div");
+    progress.className = "coverage-progress";
+
+    const appendBar = (percent, className) => {
+      const normalized = Math.max(0, Math.min(100, percent));
+      if (normalized <= 0) return;
+      const bar = document.createElement("span");
+      bar.className = `coverage-progress__bar ${className}`;
+      bar.style.width = `${normalized}%`;
+      progress.appendChild(bar);
+    };
+
+    if (item.total > 0) {
+      const donePercent = (item.done / item.total) * 100;
+      const runningPercent = (item.running / item.total) * 100;
+      const pendingPercent = 100 - donePercent - runningPercent;
+      appendBar(donePercent, "is-done");
+      appendBar(runningPercent, "is-running");
+      appendBar(pendingPercent, "is-pending");
+    }
+
+    row.appendChild(progress);
+
+    const meta = document.createElement("div");
+    meta.className = "coverage-row__meta";
+
+    if (item.environmentLabel) {
+      const env = document.createElement("span");
+      env.className = "coverage-row__env";
+      env.textContent = item.environmentLabel;
+      meta.appendChild(env);
+    }
+
+    if (item.total > 0) {
+      const makeStatus = (label, value, statusClass) => {
+        const status = document.createElement("span");
+        status.className = "coverage-row__status";
+        const dot = document.createElement("span");
+        dot.className = `coverage-row__dot ${statusClass}`;
+        status.append(dot, document.createTextNode(`${label}: ${value}`));
+        return status;
+      };
+
+      meta.appendChild(makeStatus("Concluídos", item.done, "is-done"));
+      meta.appendChild(makeStatus("Em andamento", item.running, "is-running"));
+      meta.appendChild(makeStatus("Pendentes", item.pending, "is-pending"));
+
+      const lastRunLabel = formatShortDate(item.lastRun);
+      if (lastRunLabel) {
+        const last = document.createElement("span");
+        last.className = "coverage-row__note";
+        last.textContent = `Última execução: ${lastRunLabel}`;
+        meta.appendChild(last);
+      } else if (!item.hasEnvironment) {
+        const note = document.createElement("span");
+        note.className = "coverage-row__note";
+        note.textContent = "Nenhuma execução registrada";
+        meta.appendChild(note);
+      } else {
+        const note = document.createElement("span");
+        note.className = "coverage-row__note";
+        note.textContent = "Dados de execução indisponíveis";
+        meta.appendChild(note);
+      }
+    } else {
+      const noData = document.createElement("span");
+      noData.className = "coverage-row__note";
+      noData.textContent = "Nenhum cenário cadastrado";
+      meta.appendChild(noData);
+    }
+
+    row.appendChild(meta);
+    dashboardCoverageList.appendChild(row);
+  });
+
+  const average = considered > 0 ? Math.round(sumCoverage / considered) : 0;
+  if (dashboardCoverageSummary) {
+    dashboardCoverageSummary.textContent = `Média geral: ${average}%`;
+  }
+}
+
+function clearDashboard() {
+  storesCache = [];
+  environmentsCache = [];
+  renderDashboardStores();
+  updateTestCoverageCard();
+}
+
+const subscribeCoverageEnvironments = () => {
+  if (unsubscribeCoverage) return;
+  unsubscribeCoverage = onSnapshot(
+    query(collection(db, "environments"), orderBy("createdAt", "desc")),
+    (snapshot) => {
+      environmentsCache = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() || {}),
+      }));
+      updateTestCoverageCard();
+    }
+  );
 };
 
 const subscribeDashboard = () => {
   if (unsubscribeDashboard) return;
+  subscribeCoverageEnvironments();
   unsubscribeDashboard = onSnapshot(
     query(collection(db, "stores"), orderBy("createdAt", "desc")),
     (snapshot) => {
-      const dash = el("dashboardStores");
-      if (!dash) return;
-      dash.innerHTML = "";
-      let hasStores = false;
-
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const card = document.createElement("article");
-        card.className = "store-card";
-
-        const header = document.createElement("div");
-        header.className = "store-card__header";
-
-        const title = document.createElement("strong");
-        title.className = "store-card__title";
-        title.textContent = data.name || "Loja";
-
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = `${(data.scenarios || []).length} cenários`;
-
-        header.append(title, badge);
-        card.appendChild(header);
-
-        const site = document.createElement("span");
-        site.className = "muted";
-        site.textContent = formatUrlLabel(data.site || "") || "Nenhum site cadastrado";
-        card.appendChild(site);
-
-        if (data.description) {
-          const desc = document.createElement("p");
-          desc.className = "scenario-note";
-          desc.textContent = data.description;
-          card.appendChild(desc);
-        }
-
-        card.addEventListener("click", () => abrirLoja(docSnap.id, data));
-
-        dash.appendChild(card);
-        hasStores = true;
-      });
-
-      if (!hasStores) {
-        const empty = document.createElement("div");
-        empty.className = "empty-state";
-        const title = document.createElement("h3");
-        title.textContent = "Nenhuma loja cadastrada";
-        const text = document.createElement("p");
-        text.className = "muted";
-        text.textContent = "Clique em \"+ Nova Loja\" para iniciar sua organização.";
-        empty.append(title, text);
-        dash.appendChild(empty);
-      }
+      storesCache = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() || {}),
+      }));
+      renderDashboardStores();
+      updateTestCoverageCard();
     }
   );
 };
@@ -1165,13 +1432,49 @@ function parseCsvScenarios(text) {
 
 function parseJsonScenarios(text) {
   if (!text) return [];
-  const normalized = text.trim();
+  const normalized = text.replace(/^\uFEFF/, "").trim();
   if (!normalized) return [];
-  const parsed = JSON.parse(normalized);
-  if (Array.isArray(parsed)) return parsed;
-  if (parsed && Array.isArray(parsed.scenarios)) return parsed.scenarios;
-  if (parsed && Array.isArray(parsed.cenarios)) return parsed.cenarios;
-  return [];
+
+  let parsed;
+  try {
+    parsed = JSON.parse(normalized);
+  } catch (error) {
+    console.error("Arquivo JSON inválido:", error);
+    return [];
+  }
+
+  const maxDepth = 6;
+  const findScenarioArray = (input, depth = 0) => {
+    if (!input || depth > maxDepth) return null;
+
+    if (Array.isArray(input)) {
+      const onlyObjects = input.filter((item) => item && typeof item === "object");
+      if (onlyObjects.length && onlyObjects.length === input.length) {
+        return onlyObjects;
+      }
+      return null;
+    }
+
+    if (typeof input !== "object") return null;
+
+    const preferredKeys = ["scenarios", "cenarios", "data", "items", "lista", "results"];
+    for (const key of preferredKeys) {
+      if (input[key] !== undefined) {
+        const found = findScenarioArray(input[key], depth + 1);
+        if (found) return found;
+      }
+    }
+
+    for (const value of Object.values(input)) {
+      const found = findScenarioArray(value, depth + 1);
+      if (found) return found;
+    }
+
+    return null;
+  };
+
+  const found = findScenarioArray(parsed);
+  return Array.isArray(found) ? found : [];
 }
 
 function sanitizeScenarioInput(raw) {
@@ -1274,13 +1577,34 @@ async function handleScenarioImport(type, file) {
 
 async function loadJsPDF() {
   if (jsPDFConstructor) return jsPDFConstructor;
-  const module = await import(
-    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
-  );
-  jsPDFConstructor = module.jsPDF || (module.default && module.default.jsPDF) || module.default;
-  if (typeof jsPDFConstructor !== "function") {
-    throw new Error("jsPDF não carregado");
+  const sources = [
+    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js",
+    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
+  ];
+
+  let lastError = null;
+
+  for (const source of sources) {
+    try {
+      const module = await import(source);
+      const candidate =
+        module.jsPDF ||
+        (module.default && module.default.jsPDF) ||
+        module.default;
+      if (typeof candidate === "function") {
+        jsPDFConstructor = candidate;
+        break;
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`Falha ao carregar jsPDF de ${source}:`, error);
+    }
   }
+
+  if (!jsPDFConstructor) {
+    throw lastError || new Error("jsPDF não carregado");
+  }
+
   return jsPDFConstructor;
 }
 
