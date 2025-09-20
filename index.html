@@ -4,13 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QA Manager</title>
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="style.css" />
-    <script
-      src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
-      defer
-      crossorigin="anonymous"
-    ></script>
   </head>
   <body data-theme="dark">
     <div id="authShell" class="auth-shell">
@@ -137,230 +131,16 @@
 
       <main>
         <section id="secDashboard" class="view is-visible">
-          <div class="section-heading section-heading--dashboard">
-            <div class="section-heading__content">
-              <p class="section-heading__eyebrow">Visão geral do programa</p>
+          <div class="section-heading">
+            <div>
               <h2>Painel de Lojas</h2>
               <p class="muted">
-                Acompanhe rapidamente quais lojas fazem parte do programa de QA,
-                acesse seus detalhes e utilize as estatísticas, filtros e atalhos
-                para agir sem perder tempo.
+                Acompanhe rapidamente quais lojas fazem parte do programa de QA e
+                acesse seus detalhes.
               </p>
             </div>
-            <aside
-              class="section-heading__meta"
-              aria-label="Sincronização e preferências de visualização"
-            >
-              <div class="heading-card" aria-live="polite">
-                <span class="heading-card__label">Última atualização</span>
-                <strong id="dashboardLastSynced" class="heading-card__value">—</strong>
-                <button
-                  type="button"
-                  id="btnDashboardRefresh"
-                  class="ghost heading-card__action"
-                >
-                  Atualizar agora
-                </button>
-              </div>
-              <div class="heading-card">
-                <span class="heading-card__label">Modo de exibição</span>
-                <div
-                  class="heading-card__group"
-                  role="group"
-                  aria-label="Escolher modo de visualização"
-                >
-                  <button type="button" class="chip is-active" data-dashboard-view="grid">
-                    Cards
-                  </button>
-                  <button type="button" class="chip" data-dashboard-view="list">
-                    Lista
-                  </button>
-                </div>
-                <span id="dashboardViewModeLabel" class="heading-card__hint">Cards</span>
-              </div>
-            </aside>
           </div>
-          <div class="dashboard-overview">
-            <section class="dashboard-stats" aria-live="polite">
-              <article class="stat-card">
-                <span class="stat-card__label">Lojas monitoradas</span>
-                <strong id="dashboardStatStores" class="stat-card__value">0</strong>
-                <span class="stat-card__hint"
-                  ><span id="dashboardStatActive">0</span> com execuções</span
-                >
-              </article>
-              <article class="stat-card">
-                <span class="stat-card__label">Cenários cadastrados</span>
-                <strong id="dashboardStatScenarios" class="stat-card__value"
-                  >0</strong
-                >
-                <span class="stat-card__hint">Atualizado em tempo real</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-card__label">Cobertura média</span>
-                <strong id="dashboardStatCoverage" class="stat-card__value"
-                  >—</strong
-                >
-                <span class="stat-card__hint">Baseada na última execução</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-card__label">Ambientes ativos</span>
-                <strong
-                  id="dashboardStatEnvironments"
-                  class="stat-card__value"
-                  >0</strong
-                >
-                <span class="stat-card__hint">Monitorados pelo time</span>
-              </article>
-              <article class="stat-card">
-                <span class="stat-card__label">Lojas aguardando atenção</span>
-                <strong id="dashboardStatIdle" class="stat-card__value">0</strong>
-                <span class="stat-card__hint">
-                  Sem execuções ou ambientes configurados
-                </span>
-              </article>
-            </section>
-            <aside class="dashboard-quick-actions">
-              <div>
-                <h3>Atalhos rápidos</h3>
-                <p class="muted">
-                  Acelere as rotinas diárias do time de QA com um clique.
-                </p>
-              </div>
-              <div class="dashboard-quick-actions__buttons">
-                <button type="button" id="btnDashboardNewStore" class="primary">
-                  + Nova loja
-                </button>
-                <button type="button" id="btnDashboardOpenProfile" class="ghost">
-                  Preferências
-                </button>
-                <button type="button" id="btnDashboardToggleTheme" class="ghost">
-                  Usar modo claro
-                </button>
-              </div>
-              <div class="dashboard-quick-actions__meta" aria-live="polite">
-                <div class="meta-stat">
-                  <span class="label">Pendências do time</span>
-                  <strong id="dashboardQuickIdle">0</strong>
-                  <p class="muted small">
-                    Lojas aguardando configuração ou execução.
-                  </p>
-                </div>
-                <div class="meta-stat">
-                  <span class="label">Visualização atual</span>
-                  <strong id="dashboardQuickView">Cards</strong>
-                  <p class="muted small">
-                    Altere conforme a necessidade do squad.
-                  </p>
-                </div>
-              </div>
-              <ul class="dashboard-quick-actions__list">
-                <li>Cadastre lojas e ambientes em poucos cliques.</li>
-                <li>Filtre e ordene para encontrar rapidamente o que precisa.</li>
-                <li>Exporte a base de cenários em Markdown ou PDF.</li>
-              </ul>
-            </aside>
-          </div>
-          <div
-            class="dashboard-toolbar"
-            role="region"
-            aria-label="Ferramentas do painel"
-          >
-            <div class="toolbar-field">
-              <label for="dashboardSearch" class="label">Buscar loja</label>
-              <div class="input-with-icon">
-                <span class="input-with-icon__icon" aria-hidden="true">🔍</span>
-                <input
-                  type="search"
-                  id="dashboardSearch"
-                  placeholder="Buscar por nome, site ou descrição"
-                  autocomplete="off"
-                />
-              </div>
-            </div>
-            <div class="toolbar-field">
-              <label for="dashboardSort" class="label">Ordenar por</label>
-              <select id="dashboardSort">
-                <option value="recent">Mais recentes</option>
-                <option value="name">Nome (A → Z)</option>
-                <option value="coverage">Maior cobertura</option>
-                <option value="scenarios">Mais cenários</option>
-              </select>
-            </div>
-            <div class="toolbar-field">
-              <label for="dashboardFilter" class="label">Exibir</label>
-              <select id="dashboardFilter">
-                <option value="all">Todas as lojas</option>
-                <option value="with-execution">Com execuções</option>
-                <option value="without-execution">Sem execuções</option>
-              </select>
-            </div>
-            <div class="toolbar-field toolbar-field--actions">
-              <span class="label">Ajustes rápidos</span>
-              <div class="toolbar-actions">
-                <button type="button" id="btnDashboardResetFilters" class="ghost">
-                  Limpar filtros
-                </button>
-              </div>
-            </div>
-          </div>
-          <div
-            class="dashboard-chips"
-            role="toolbar"
-            aria-label="Filtros rápidos do painel"
-          >
-            <button
-              type="button"
-              class="chip is-active"
-              data-dashboard-filter="all"
-              aria-pressed="true"
-            >
-              Todas
-              <span class="chip__count" data-dashboard-filter-count="all">0</span>
-            </button>
-            <button
-              type="button"
-              class="chip"
-              data-dashboard-filter="with-execution"
-              aria-pressed="false"
-            >
-              Com execuções
-              <span class="chip__count" data-dashboard-filter-count="with-execution">0</span>
-            </button>
-            <button
-              type="button"
-              class="chip"
-              data-dashboard-filter="without-execution"
-              aria-pressed="false"
-            >
-              Sem execuções
-              <span class="chip__count" data-dashboard-filter-count="without-execution">0</span>
-            </button>
-          </div>
-          <div class="dashboard-analytics">
-            <article class="card card--analytics" aria-live="polite">
-              <div class="card-header">
-                <div>
-                  <p class="card-subtitle">Cobertura de testes</p>
-                  <h3>Comparativo entre lojas</h3>
-                </div>
-                <span id="dashboardCoverageSummary" class="badge"
-                  >Média geral: —</span
-                >
-              </div>
-              <p class="muted small">
-                Visualize o status consolidado da última execução registrada em
-                cada loja.
-              </p>
-              <div id="dashboardCoverageList" class="coverage-list"></div>
-            </article>
-          </div>
-          <div
-            id="dashboardStores"
-            class="dashboard-stores"
-            data-view="grid"
-            aria-live="polite"
-          ></div>
+          <div id="dashboardStores" class="grid"></div>
         </section>
 
         <section id="secLoja" class="view">
