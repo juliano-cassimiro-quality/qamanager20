@@ -58,6 +58,9 @@ let ambienteSelecionado = null;
 let confirmHandler = null;
 let unsubscribeAmbientes = null;
 let unsubscribeAmbiente = null;
+let scenarioCategoryFilterValue = "all";
+let pendingScenarioImportType = null;
+let jsPDFConstructor = null;
 
 const el = (id) => document.getElementById(id);
 const showView = (id) => {
@@ -92,6 +95,72 @@ const statusLabels = {
   pendente: "Pendente",
   andamento: "Em andamento",
   concluido: "Concluído",
+};
+
+const DEFAULT_SCENARIO_STAGE = "pre-deploy";
+
+const scenarioStageLabels = {
+  "pre-deploy": "Pré-deploy",
+  "pos-deploy": "Pós-deploy",
+  regressivo: "Regressivo",
+};
+
+const removeDiacritics = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const toText = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+};
+
+const normalizeScenarioStage = (value) => {
+  const normalized = removeDiacritics(value)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return DEFAULT_SCENARIO_STAGE;
+  if (normalized.includes("pos")) return "pos-deploy";
+  if (normalized.includes("regress")) return "regressivo";
+  return DEFAULT_SCENARIO_STAGE;
+};
+
+const getScenarioStageLabel = (value) =>
+  scenarioStageLabels[normalizeScenarioStage(value)] ||
+  scenarioStageLabels[DEFAULT_SCENARIO_STAGE];
+
+const normalizeCategoryKey = (value) =>
+  removeDiacritics(value)
+    .toLowerCase()
+    .trim();
+
+const slugify = (value) => {
+  const base = removeDiacritics(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || "cenarios";
+};
+
+const escapeMarkdownCell = (value) =>
+  toText(value)
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, "<br>");
+
+const downloadFile = (content, filename, mimeType) => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 const authShell = el("authShell");
@@ -527,6 +596,18 @@ const scenarioCategory = el("scenarioCategory");
 const scenarioAutomation = el("scenarioAutomation");
 const scenarioCluster = el("scenarioCluster");
 const scenarioObs = el("scenarioObs");
+const scenarioStage = el("scenarioStage");
+const scenarioCategoryFilter = el("scenarioCategoryFilter");
+const btnImportCsv = el("btnImportCsv");
+const btnImportJson = el("btnImportJson");
+const btnExportMarkdown = el("btnExportMarkdown");
+const btnExportPdf = el("btnExportPdf");
+const scenarioImportInput = el("scenarioImportInput");
+
+if (scenarioCategoryFilter) {
+  scenarioCategoryFilter.value = "all";
+  scenarioCategoryFilter.disabled = true;
+}
 
 const storeForm = el("storeForm");
 const storeFormTitle = el("storeFormTitle");
@@ -724,12 +805,23 @@ const abrirLoja = (id, data) => {
     unsubscribeAmbiente = null;
   }
 
+  scenarioCategoryFilterValue = "all";
+  if (scenarioCategoryFilter) {
+    scenarioCategoryFilter.value = "all";
+    scenarioCategoryFilter.disabled = true;
+  }
+
   lojaSelecionada = {
     id,
     ...data,
     description: data.description || "",
     site: normalizeUrl(data.site || ""),
-    scenarios: Array.isArray(data.scenarios) ? data.scenarios : [],
+    scenarios: Array.isArray(data.scenarios)
+      ? data.scenarios.map((sc) => ({
+          ...sc,
+          stage: normalizeScenarioStage(sc.stage),
+        }))
+      : [],
     scenarioCount: Array.isArray(data.scenarios) ? data.scenarios.length : 0,
     environmentCount: 0,
   };
@@ -750,6 +842,11 @@ el("btnVoltarDashboard").addEventListener("click", () => {
   if (unsubscribeAmbiente) {
     unsubscribeAmbiente();
     unsubscribeAmbiente = null;
+  }
+  scenarioCategoryFilterValue = "all";
+  if (scenarioCategoryFilter) {
+    scenarioCategoryFilter.value = "all";
+    scenarioCategoryFilter.disabled = true;
   }
 });
 
@@ -848,16 +945,25 @@ scenarioForm.addEventListener("submit", async (event) => {
     automation: scenarioAutomation.value,
     cluster: scenarioCluster.value,
     obs: scenarioObs.value.trim(),
+    stage: normalizeScenarioStage(scenarioStage?.value),
   };
 
   const ref = doc(db, "stores", lojaSelecionada.id);
   const snap = await getDoc(ref);
   const data = snap.data();
-  const arr = Array.isArray(data?.scenarios) ? [...data.scenarios] : [];
+  const arr = Array.isArray(data?.scenarios)
+    ? data.scenarios.map((item) => ({
+        ...item,
+        stage: normalizeScenarioStage(item.stage),
+      }))
+    : [];
   arr.push(scenario);
 
-  await updateDoc(ref, { scenarios: arr });
+  await updateDoc(ref, { scenarios: arr, scenarioCount: arr.length });
   scenarioForm.reset();
+  if (scenarioStage) {
+    scenarioStage.value = DEFAULT_SCENARIO_STAGE;
+  }
   loadCenariosTabela(lojaSelecionada.id);
 });
 
@@ -868,6 +974,8 @@ async function loadCenariosTabela(id) {
 
   const data = snap.data();
   const tab = el("cenariosTabela");
+  if (!tab) return;
+
   tab.innerHTML = `
     <thead>
       <tr>
@@ -875,6 +983,7 @@ async function loadCenariosTabela(id) {
         <th>Categoria</th>
         <th>Automação</th>
         <th>Cluster</th>
+        <th>Fase</th>
         <th>Observações</th>
         <th></th>
       </tr>
@@ -882,64 +991,490 @@ async function loadCenariosTabela(id) {
     <tbody></tbody>
   `;
 
-  const tbody = tab.querySelector("tbody");
-  const scenarios = Array.isArray(data.scenarios) ? data.scenarios : [];
-
-  if (!scenarios.length) {
-    const row = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 6;
-    td.className = "empty";
-    td.textContent = "Nenhum cenário cadastrado até o momento.";
-    row.appendChild(td);
-    tbody.appendChild(row);
-  } else {
-    scenarios.forEach((sc, idx) => {
-      const row = document.createElement("tr");
-
-      const cellTitulo = document.createElement("td");
-      cellTitulo.textContent = sc.title || "-";
-
-      const cellCategoria = document.createElement("td");
-      cellCategoria.textContent = sc.category || "-";
-
-      const cellAuto = document.createElement("td");
-      cellAuto.textContent = sc.automation || "-";
-
-      const cellCluster = document.createElement("td");
-      cellCluster.textContent = sc.cluster || "-";
-
-      const cellObs = document.createElement("td");
-      cellObs.textContent = sc.obs || "";
-
-      const cellActions = document.createElement("td");
-      cellActions.className = "actions";
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "icon-danger";
-      btn.textContent = "Remover";
-      btn.addEventListener("click", async () => {
-        const newArr = [...scenarios];
-        newArr.splice(idx, 1);
-        await updateDoc(ref, { scenarios: newArr });
-        loadCenariosTabela(id);
-      });
-      cellActions.appendChild(btn);
-
-      row.append(cellTitulo, cellCategoria, cellAuto, cellCluster, cellObs, cellActions);
-      tbody.appendChild(row);
-    });
-  }
+  const scenarios = Array.isArray(data.scenarios)
+    ? data.scenarios.map((sc) => ({
+        ...sc,
+        stage: normalizeScenarioStage(sc.stage),
+      }))
+    : [];
 
   lojaSelecionada = {
-    ...lojaSelecionada,
+    ...(lojaSelecionada || {}),
     ...data,
+    id: lojaSelecionada?.id || id,
     site: normalizeUrl(data.site || lojaSelecionada?.site || ""),
     description: data.description || lojaSelecionada?.description || "",
     scenarios,
     scenarioCount: scenarios.length,
   };
+
   renderLojaResumo();
+  renderScenarioFilters(scenarios);
+  renderScenarioTableRows(scenarios);
+}
+
+function getFilteredScenarios(scenarios) {
+  if (!Array.isArray(scenarios)) return [];
+  if (scenarioCategoryFilterValue === "all") return scenarios;
+  return scenarios.filter(
+    (sc) => normalizeCategoryKey(sc.category) === scenarioCategoryFilterValue
+  );
+}
+
+function renderScenarioFilters(scenarios) {
+  if (!scenarioCategoryFilter) return;
+
+  const categories = new Map();
+
+  scenarios.forEach((sc) => {
+    const label = toText(sc.category);
+    const key = normalizeCategoryKey(label);
+    if (!label || !key) return;
+    if (!categories.has(key)) {
+      categories.set(key, label);
+    }
+  });
+
+  scenarioCategoryFilter.innerHTML = "";
+
+  const allOption = document.createElement("option");
+  allOption.value = "all";
+  allOption.textContent = "Todas as categorias";
+  scenarioCategoryFilter.appendChild(allOption);
+
+  categories.forEach((label, key) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = label;
+    scenarioCategoryFilter.appendChild(option);
+  });
+
+  if (scenarioCategoryFilterValue !== "all" && !categories.has(scenarioCategoryFilterValue)) {
+    scenarioCategoryFilterValue = "all";
+  }
+
+  scenarioCategoryFilter.value = scenarioCategoryFilterValue;
+  scenarioCategoryFilter.disabled = categories.size === 0;
+}
+
+function renderScenarioTableRows(scenarios) {
+  const tab = el("cenariosTabela");
+  if (!tab) return;
+
+  const tbody = tab.querySelector("tbody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  const filtered = getFilteredScenarios(scenarios);
+  if (!filtered.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.className = "empty";
+    const hasScenarios = Array.isArray(scenarios) && scenarios.length > 0;
+    cell.textContent = hasScenarios
+      ? "Nenhum cenário encontrado para o filtro selecionado."
+      : "Nenhum cenário cadastrado até o momento.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
+
+  const storeId = lojaSelecionada?.id;
+
+  filtered.forEach((sc) => {
+    const row = document.createElement("tr");
+
+    const cellTitulo = document.createElement("td");
+    cellTitulo.textContent = sc.title || "-";
+
+    const cellCategoria = document.createElement("td");
+    cellCategoria.textContent = sc.category || "-";
+
+    const cellAuto = document.createElement("td");
+    cellAuto.textContent = sc.automation || "-";
+
+    const cellCluster = document.createElement("td");
+    cellCluster.textContent = sc.cluster || "-";
+
+    const cellStage = document.createElement("td");
+    const stageBadge = document.createElement("span");
+    stageBadge.className = "tag";
+    stageBadge.textContent = getScenarioStageLabel(sc.stage);
+    cellStage.appendChild(stageBadge);
+
+    const cellObs = document.createElement("td");
+    cellObs.textContent = sc.obs || "";
+
+    const cellActions = document.createElement("td");
+    cellActions.className = "actions";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-danger";
+    btn.textContent = "Remover";
+    btn.addEventListener("click", async () => {
+      if (!storeId) return;
+      const current = Array.isArray(lojaSelecionada?.scenarios)
+        ? [...lojaSelecionada.scenarios]
+        : [];
+      const index = current.indexOf(sc);
+      if (index === -1) return;
+      current.splice(index, 1);
+      try {
+        await updateDoc(doc(db, "stores", storeId), {
+          scenarios: current,
+          scenarioCount: current.length,
+        });
+        loadCenariosTabela(storeId);
+      } catch (error) {
+        console.error("Erro ao remover cenário:", error);
+      }
+    });
+    cellActions.appendChild(btn);
+
+    row.append(
+      cellTitulo,
+      cellCategoria,
+      cellAuto,
+      cellCluster,
+      cellStage,
+      cellObs,
+      cellActions
+    );
+    tbody.appendChild(row);
+  });
+}
+
+const updateScenarioTable = () => {
+  renderScenarioTableRows(lojaSelecionada?.scenarios || []);
+};
+
+function splitCsvLine(line, delimiter) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsvScenarios(text) {
+  if (!text) return [];
+
+  const cleaned = text.replace(/^\uFEFF/, "");
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (!lines.length) return [];
+
+  const headerLine = lines.shift();
+  const commaCount = (headerLine.match(/,/g) || []).length;
+  const semicolonCount = (headerLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ";" : ",";
+  const headers = splitCsvLine(headerLine, delimiter);
+
+  return lines.map((line) => {
+    const values = splitCsvLine(line, delimiter);
+    const item = {};
+    headers.forEach((header, index) => {
+      item[header] = values[index] !== undefined ? values[index] : "";
+    });
+    return item;
+  });
+}
+
+function parseJsonScenarios(text) {
+  if (!text) return [];
+  const normalized = text.trim();
+  if (!normalized) return [];
+  const parsed = JSON.parse(normalized);
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.scenarios)) return parsed.scenarios;
+  if (parsed && Array.isArray(parsed.cenarios)) return parsed.cenarios;
+  return [];
+}
+
+function sanitizeScenarioInput(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const normalized = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    const normalizedKey = removeDiacritics(key)
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    normalized[normalizedKey] = value;
+  });
+
+  const title = toText(
+    normalized.titulo ||
+      normalized.title ||
+      normalized.nome ||
+      normalized.name ||
+      normalized.cenario ||
+      normalized.scenario
+  );
+  if (!title) return null;
+
+  const category = toText(
+    normalized.categoria ||
+      normalized.category ||
+      normalized.grupo ||
+      normalized.grupocenario
+  );
+
+  const automation = toText(
+    normalized.automacao ||
+      normalized.automation ||
+      normalized.statusautomatizacao ||
+      normalized.automatizacao
+  );
+
+  const cluster = toText(
+    normalized.cluster ||
+      normalized.plataforma ||
+      normalized.platform
+  );
+
+  const obs = toText(
+    normalized.observacoes ||
+      normalized.obs ||
+      normalized.observacao ||
+      normalized.notas ||
+      normalized.notes
+  );
+
+  const stageRaw =
+    normalized.fase || normalized.stage || normalized.etapa || normalized.ciclo;
+
+  return {
+    title,
+    category,
+    automation,
+    cluster,
+    obs,
+    stage: normalizeScenarioStage(stageRaw),
+  };
+}
+
+async function handleScenarioImport(type, file) {
+  if (!lojaSelecionada) {
+    alert("Selecione uma loja para importar cenários.");
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const rawItems = type === "csv" ? parseCsvScenarios(text) : parseJsonScenarios(text);
+    const scenariosToAdd = rawItems
+      .map(sanitizeScenarioInput)
+      .filter(Boolean);
+
+    if (!scenariosToAdd.length) {
+      alert("Não encontramos cenários válidos no arquivo selecionado.");
+      return;
+    }
+
+    const ref = doc(db, "stores", lojaSelecionada.id);
+    const snap = await getDoc(ref);
+    const data = snap.data() || {};
+    const current = Array.isArray(data.scenarios)
+      ? data.scenarios.map((item) => ({
+          ...item,
+          stage: normalizeScenarioStage(item.stage),
+        }))
+      : [];
+
+    const merged = [...current, ...scenariosToAdd];
+
+    await updateDoc(ref, {
+      scenarios: merged,
+      scenarioCount: merged.length,
+    });
+
+    alert(`${scenariosToAdd.length} cenário(s) importado(s) com sucesso.`);
+    loadCenariosTabela(lojaSelecionada.id);
+  } catch (error) {
+    console.error("Erro ao importar cenários:", error);
+    alert("Não foi possível importar os cenários. Verifique o arquivo e tente novamente.");
+  }
+}
+
+async function loadJsPDF() {
+  if (jsPDFConstructor) return jsPDFConstructor;
+  const module = await import(
+    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
+  );
+  jsPDFConstructor = module.jsPDF || (module.default && module.default.jsPDF) || module.default;
+  if (typeof jsPDFConstructor !== "function") {
+    throw new Error("jsPDF não carregado");
+  }
+  return jsPDFConstructor;
+}
+
+function exportScenariosAsMarkdown() {
+  if (!lojaSelecionada) {
+    alert("Abra uma loja para exportar os cenários.");
+    return;
+  }
+
+  const scenarios = getFilteredScenarios(lojaSelecionada.scenarios || []);
+  if (!scenarios.length) {
+    alert("Não há cenários disponíveis para exportação com o filtro atual.");
+    return;
+  }
+
+  const lines = [
+    `# Cenários - ${lojaSelecionada.name || "Loja"}`,
+    "",
+    "| Título | Categoria | Automação | Cluster | Fase | Observações |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...scenarios.map(
+      (sc) =>
+        `| ${escapeMarkdownCell(sc.title || "-")} | ${escapeMarkdownCell(
+          sc.category || "-"
+        )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
+          sc.cluster || "-"
+        )} | ${escapeMarkdownCell(getScenarioStageLabel(sc.stage))} | ${escapeMarkdownCell(
+          sc.obs || ""
+        )} |`
+    ),
+  ];
+
+  downloadFile(
+    lines.join("\n"),
+    `cenarios-${slugify(lojaSelecionada.name || "loja")}.md`,
+    "text/markdown;charset=utf-8"
+  );
+}
+
+async function exportScenariosAsPdf() {
+  if (!lojaSelecionada) {
+    alert("Abra uma loja para exportar os cenários.");
+    return;
+  }
+
+  const scenarios = getFilteredScenarios(lojaSelecionada.scenarios || []);
+  if (!scenarios.length) {
+    alert("Não há cenários disponíveis para exportação com o filtro atual.");
+    return;
+  }
+
+  try {
+    const JsPDF = await loadJsPDF();
+    const pdf = new JsPDF();
+    pdf.setFontSize(16);
+    pdf.text(`Cenários - ${lojaSelecionada.name || "Loja"}`, 14, 20);
+    pdf.setFontSize(12);
+
+    let y = 30;
+    const lineHeight = 6;
+    const maxY = 280;
+
+    const ensureSpace = (lines = 1) => {
+      if (y + lineHeight * lines > maxY) {
+        pdf.addPage();
+        y = 20;
+      }
+    };
+
+    scenarios.forEach((sc, index) => {
+      const entries = [
+        `${index + 1}. ${toText(sc.title) || "Cenário"}`,
+        `Categoria: ${sc.category || "-"}`,
+        `Automação: ${sc.automation || "-"}`,
+        `Cluster: ${sc.cluster || "-"}`,
+        `Fase: ${getScenarioStageLabel(sc.stage)}`,
+      ];
+
+      if (sc.obs) {
+        entries.push(`Observações: ${sc.obs}`);
+      }
+
+      entries.forEach((entry, entryIndex) => {
+        const wrapped = pdf.splitTextToSize(entry, 180);
+        ensureSpace(wrapped.length);
+        pdf.text(wrapped, 14, y);
+        y += wrapped.length * lineHeight;
+        if (entryIndex === entries.length - 1) {
+          y += 4;
+        }
+      });
+    });
+
+    pdf.save(`cenarios-${slugify(lojaSelecionada.name || "loja")}.pdf`);
+  } catch (error) {
+    console.error("Erro ao exportar cenários em PDF:", error);
+    alert("Não foi possível exportar os cenários em PDF. Tente novamente.");
+  }
+}
+
+if (scenarioCategoryFilter) {
+  scenarioCategoryFilter.addEventListener("change", () => {
+    scenarioCategoryFilterValue = scenarioCategoryFilter.value || "all";
+    updateScenarioTable();
+  });
+}
+
+const triggerScenarioImport = (type) => {
+  if (!scenarioImportInput) return;
+  if (!lojaSelecionada) {
+    alert("Selecione uma loja para importar cenários.");
+    return;
+  }
+  pendingScenarioImportType = type;
+  scenarioImportInput.accept =
+    type === "csv" ? ".csv,text/csv" : ".json,application/json";
+  scenarioImportInput.value = "";
+  scenarioImportInput.click();
+};
+
+if (btnImportCsv) {
+  btnImportCsv.addEventListener("click", () => triggerScenarioImport("csv"));
+}
+
+if (btnImportJson) {
+  btnImportJson.addEventListener("click", () => triggerScenarioImport("json"));
+}
+
+if (scenarioImportInput) {
+  scenarioImportInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (file && pendingScenarioImportType) {
+      await handleScenarioImport(pendingScenarioImportType, file);
+    }
+    event.target.value = "";
+    pendingScenarioImportType = null;
+  });
+}
+
+if (btnExportMarkdown) {
+  btnExportMarkdown.addEventListener("click", exportScenariosAsMarkdown);
+}
+
+if (btnExportPdf) {
+  btnExportPdf.addEventListener("click", () => {
+    exportScenariosAsPdf();
+  });
 }
 
 el("btnNovoAmbiente").addEventListener("click", () => {
@@ -965,7 +1500,11 @@ environmentForm.addEventListener("submit", async (event) => {
     const snap = await getDoc(sRef);
     const data = snap.data() || lojaSelecionada;
     const scenarios = Array.isArray(data.scenarios)
-      ? data.scenarios.map((sc) => ({ ...sc, status: "pendente" }))
+      ? data.scenarios.map((sc) => ({
+          ...sc,
+          stage: normalizeScenarioStage(sc.stage),
+          status: "pendente",
+        }))
       : [];
 
     await addDoc(collection(db, "environments"), {
@@ -1065,7 +1604,16 @@ function abrirAmbiente(env, id) {
     unsubscribeAmbiente();
   }
 
-  ambienteSelecionado = { id, ...env };
+  ambienteSelecionado = {
+    id,
+    ...env,
+    scenarios: Array.isArray(env.scenarios)
+      ? env.scenarios.map((sc) => ({
+          ...sc,
+          stage: normalizeScenarioStage(sc.stage),
+        }))
+      : [],
+  };
   renderAmbiente();
 
   unsubscribeAmbiente = onSnapshot(doc(db, "environments", id), (snap) => {
@@ -1078,7 +1626,17 @@ function abrirAmbiente(env, id) {
       showView("secLoja");
       return;
     }
-    ambienteSelecionado = { id: snap.id, ...snap.data() };
+    const data = snap.data();
+    ambienteSelecionado = {
+      id: snap.id,
+      ...data,
+      scenarios: Array.isArray(data.scenarios)
+        ? data.scenarios.map((sc) => ({
+            ...sc,
+            stage: normalizeScenarioStage(sc.stage),
+          }))
+        : [],
+    };
     renderAmbiente();
   });
 }
@@ -1127,7 +1685,14 @@ function renderAmbiente() {
 
     const meta = document.createElement("span");
     meta.className = "scenario-meta";
-    const details = [sc.category, sc.cluster, sc.automation].filter(Boolean).join(" • ");
+    const details = [
+      getScenarioStageLabel(sc.stage),
+      sc.category,
+      sc.cluster,
+      sc.automation,
+    ]
+      .filter(Boolean)
+      .join(" • ");
     meta.textContent = details || "Detalhes não informados";
 
     info.append(title, meta);

@@ -210,6 +210,14 @@
                   <option value="Ambos">Ambos</option>
                 </select>
               </div>
+              <div class="field">
+                <label for="scenarioStage">Fase do teste</label>
+                <select id="scenarioStage">
+                  <option value="pre-deploy">Pré-deploy</option>
+                  <option value="pos-deploy">Pós-deploy</option>
+                  <option value="regressivo">Regressivo</option>
+                </select>
+              </div>
               <div class="field field--wide">
                 <label for="scenarioObs">Observações</label>
                 <textarea
@@ -222,6 +230,39 @@
                 <button type="submit" class="primary">Adicionar cenário</button>
               </div>
             </form>
+
+            <div class="scenario-toolbar">
+              <div class="scenario-toolbar__filters">
+                <label for="scenarioCategoryFilter">Filtrar por categoria</label>
+                <select id="scenarioCategoryFilter">
+                  <option value="all">Todas as categorias</option>
+                </select>
+              </div>
+              <div class="scenario-toolbar__actions">
+                <div class="scenario-toolbar__group">
+                  <button type="button" id="btnImportCsv" class="ghost">
+                    Importar CSV
+                  </button>
+                  <button type="button" id="btnImportJson" class="ghost">
+                    Importar JSON
+                  </button>
+                </div>
+                <div class="scenario-toolbar__group">
+                  <button type="button" id="btnExportMarkdown" class="ghost">
+                    Exportar Markdown
+                  </button>
+                  <button type="button" id="btnExportPdf" class="ghost">
+                    Exportar PDF
+                  </button>
+                </div>
+              </div>
+            </div>
+            <input
+              type="file"
+              id="scenarioImportInput"
+              accept=".csv,application/json,.json"
+              style="display: none"
+            />
 
             <table id="cenariosTabela"></table>
           </div>
