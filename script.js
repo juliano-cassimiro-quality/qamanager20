@@ -1968,7 +1968,6 @@ function renderAmbienteScenarioTable(scenarios) {
       <tr>
         <th>Nome</th>
         <th>Categoria</th>
-        <th>Cluster</th>
         <th>Automação</th>
         <th>Status</th>
         <th>Observações</th>
@@ -2015,9 +2014,6 @@ function renderAmbienteScenarioTable(scenarios) {
     const cellCategoria = document.createElement("td");
     cellCategoria.textContent = sc.category || "-";
 
-    const cellCluster = document.createElement("td");
-    cellCluster.textContent = sc.cluster || "-";
-
     const cellAutomacao = document.createElement("td");
     cellAutomacao.textContent = sc.automation || "-";
 
@@ -2055,7 +2051,6 @@ function renderAmbienteScenarioTable(scenarios) {
     row.append(
       cellNome,
       cellCategoria,
-      cellCluster,
       cellAutomacao,
       cellStatus,
       cellObs
