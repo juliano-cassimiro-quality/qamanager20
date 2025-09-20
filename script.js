@@ -22,14 +22,36 @@ import {
   onSnapshot,
   updateDoc,
   deleteDoc,
+  setDoc,
   query,
   orderBy,
   serverTimestamp,
   where,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut,
+  updateProfile,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+
+const savedTheme = localStorage.getItem("qa-theme") || "dark";
+document.body.dataset.theme = savedTheme;
+let currentTheme = savedTheme;
+
+let currentUser = null;
+let userProfileData = { displayName: "", email: "", theme: currentTheme };
+let lastMainView = "secDashboard";
+let previousViewBeforeProfile = "secDashboard";
+let unsubscribeDashboard = null;
 
 let lojaSelecionada = null;
 let ambienteSelecionado = null;
@@ -42,6 +64,9 @@ const showView = (id) => {
   document.querySelectorAll(".view").forEach((section) => {
     section.classList.toggle("is-visible", section.id === id);
   });
+  if (id !== "secProfile") {
+    lastMainView = id;
+  }
 };
 
 const normalizeUrl = (value) => {
@@ -68,6 +93,427 @@ const statusLabels = {
   andamento: "Em andamento",
   concluido: "Concluído",
 };
+
+const authShell = el("authShell");
+const appShell = el("appShell");
+const userActions = el("userActions");
+const userDisplayName = el("userDisplayName");
+const btnOpenProfile = el("btnOpenProfile");
+const btnSignOut = el("btnSignOut");
+const btnProfileBack = el("btnProfileBack");
+
+const loginForm = el("loginForm");
+const loginEmail = el("loginEmail");
+const loginPassword = el("loginPassword");
+const loginFeedback = el("loginFeedback");
+
+const registerForm = el("registerForm");
+const registerName = el("registerName");
+const registerEmail = el("registerEmail");
+const registerPassword = el("registerPassword");
+const registerConfirm = el("registerConfirm");
+const registerFeedback = el("registerFeedback");
+
+const resetForm = el("resetForm");
+const resetEmail = el("resetEmail");
+const resetFeedback = el("resetFeedback");
+
+const profileForm = el("profileForm");
+const profileName = el("profileName");
+const profileEmail = el("profileEmail");
+const profileFeedback = el("profileFeedback");
+
+const authSwitchButtons = document.querySelectorAll("[data-auth-target]");
+
+const getThemeRadios = () =>
+  Array.from(document.querySelectorAll('input[name="profileTheme"]'));
+
+const applyTheme = (theme) => {
+  const normalized = theme === "light" ? "light" : "dark";
+  currentTheme = normalized;
+  document.body.dataset.theme = normalized;
+  localStorage.setItem("qa-theme", normalized);
+  getThemeRadios().forEach((input) => {
+    input.checked = input.value === normalized;
+  });
+};
+
+const updateFeedback = (element, message = "", type = "error") => {
+  if (!element) return;
+  element.textContent = message;
+  element.className = `form-feedback${message ? ` is-${type}` : ""}`;
+};
+
+const setFormLoading = (form, isLoading, loadingText = "Aguarde...") => {
+  if (!form) return;
+  const submit = form.querySelector('button[type="submit"]');
+  if (!submit) return;
+  if (isLoading) {
+    if (!submit.dataset.originalText) {
+      submit.dataset.originalText = submit.textContent;
+    }
+    submit.textContent = loadingText;
+    submit.disabled = true;
+  } else {
+    submit.textContent = submit.dataset.originalText || submit.textContent;
+    submit.disabled = false;
+  }
+};
+
+const showAuthView = (id) => {
+  document.querySelectorAll(".auth-card").forEach((card) => {
+    card.classList.toggle("is-visible", card.id === id);
+  });
+};
+
+const setAppVisibility = (isAuthenticated) => {
+  if (!authShell || !appShell) return;
+  if (isAuthenticated) {
+    authShell.classList.add("is-hidden");
+    appShell.classList.remove("is-hidden");
+  } else {
+    appShell.classList.add("is-hidden");
+    authShell.classList.remove("is-hidden");
+  }
+};
+
+const updateUserHeader = () => {
+  if (!userDisplayName) return;
+  const name =
+    userProfileData.displayName ||
+    userProfileData.email ||
+    currentUser?.email ||
+    "Usuário";
+  userDisplayName.textContent = name;
+  if (userActions) {
+    userActions.classList.remove("is-hidden");
+  }
+};
+
+const clearUserHeader = () => {
+  if (userDisplayName) {
+    userDisplayName.textContent = "Usuário";
+  }
+  if (userActions) {
+    userActions.classList.add("is-hidden");
+  }
+};
+
+const populateProfileForm = () => {
+  if (!profileForm) return;
+  if (profileName) {
+    profileName.value = userProfileData.displayName || "";
+  }
+  if (profileEmail) {
+    profileEmail.value = userProfileData.email || currentUser?.email || "";
+  }
+  updateFeedback(profileFeedback);
+  const theme = userProfileData.theme || currentTheme;
+  getThemeRadios().forEach((input) => {
+    input.checked = input.value === theme;
+  });
+};
+
+const getAuthErrorMessage = (code = "") => {
+  const messages = {
+    "auth/invalid-email": "Informe um e-mail válido.",
+    "auth/missing-email": "Informe um e-mail válido.",
+    "auth/user-not-found": "Usuário não encontrado.",
+    "auth/wrong-password": "Senha inválida. Verifique os dados e tente novamente.",
+    "auth/invalid-credential": "Credenciais inválidas. Revise e tente novamente.",
+    "auth/too-many-requests": "Muitas tentativas. Aguarde alguns instantes e tente novamente.",
+    "auth/email-already-in-use": "Este e-mail já está em uso.",
+    "auth/weak-password": "Utilize uma senha com pelo menos 6 caracteres.",
+    "auth/network-request-failed": "Não foi possível conectar. Verifique sua internet.",
+  };
+  return messages[code] || "Não foi possível concluir a operação. Tente novamente.";
+};
+
+const ensureUserDocument = async (user) => {
+  const userRef = doc(db, "users", user.uid);
+  const snapshot = await getDoc(userRef);
+  if (!snapshot.exists()) {
+    const payload = {
+      displayName: user.displayName || "",
+      email: user.email,
+      theme: currentTheme,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(userRef, payload);
+    return payload;
+  }
+  return snapshot.data();
+};
+
+const loadUserProfile = async (user) => {
+  const data = await ensureUserDocument(user);
+  const theme = data?.theme === "light" ? "light" : "dark";
+  userProfileData = {
+    displayName: data?.displayName || "",
+    email: data?.email || user.email || "",
+    theme,
+  };
+  applyTheme(theme);
+  populateProfileForm();
+  updateUserHeader();
+};
+
+applyTheme(currentTheme);
+clearUserHeader();
+
+authSwitchButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = button.getAttribute("data-auth-target");
+    if (!target) return;
+    showAuthView(target);
+    updateFeedback(loginFeedback);
+    updateFeedback(registerFeedback);
+    updateFeedback(resetFeedback);
+
+    if (target === "authReset" && loginEmail && resetEmail && !resetEmail.value) {
+      resetEmail.value = loginEmail.value;
+    }
+
+    if (target === "authLogin" && registerEmail && loginEmail && registerEmail.value) {
+      loginEmail.value = registerEmail.value;
+    }
+  });
+});
+
+if (loginForm) {
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!loginEmail || !loginPassword) return;
+
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+
+    if (!email || !password) {
+      updateFeedback(loginFeedback, "Informe e-mail e senha.");
+      return;
+    }
+
+    updateFeedback(loginFeedback);
+    setFormLoading(loginForm, true, "Entrando...");
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error("Erro ao entrar:", error);
+      updateFeedback(loginFeedback, getAuthErrorMessage(error.code));
+    } finally {
+      setFormLoading(loginForm, false);
+    }
+  });
+}
+
+if (registerForm) {
+  registerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!registerEmail || !registerPassword || !registerConfirm) return;
+
+    const name = registerName?.value.trim() || "";
+    const email = registerEmail.value.trim();
+    const password = registerPassword.value;
+    const confirm = registerConfirm.value;
+
+    if (!email || !password) {
+      updateFeedback(registerFeedback, "Informe e-mail e senha.");
+      return;
+    }
+
+    if (password !== confirm) {
+      updateFeedback(registerFeedback, "As senhas não coincidem.");
+      return;
+    }
+
+    updateFeedback(registerFeedback);
+    setFormLoading(registerForm, true, "Criando conta...");
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+      if (name && credential.user) {
+        await updateProfile(credential.user, { displayName: name });
+      }
+      await setDoc(doc(db, "users", credential.user.uid), {
+        displayName: name,
+        email,
+        theme: currentTheme,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Erro ao criar conta:", error);
+      updateFeedback(registerFeedback, getAuthErrorMessage(error.code));
+    } finally {
+      setFormLoading(registerForm, false);
+    }
+  });
+}
+
+if (resetForm) {
+  resetForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!resetEmail) return;
+
+    const email = resetEmail.value.trim();
+    if (!email) {
+      updateFeedback(resetFeedback, "Informe um e-mail válido.");
+      return;
+    }
+
+    updateFeedback(resetFeedback);
+    setFormLoading(resetForm, true, "Enviando...");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      updateFeedback(
+        resetFeedback,
+        "Enviamos um e-mail com as instruções para redefinir sua senha.",
+        "success"
+      );
+    } catch (error) {
+      console.error("Erro ao solicitar redefinição de senha:", error);
+      updateFeedback(resetFeedback, getAuthErrorMessage(error.code));
+    } finally {
+      setFormLoading(resetForm, false);
+    }
+  });
+}
+
+if (btnOpenProfile) {
+  btnOpenProfile.addEventListener("click", () => {
+    if (!currentUser) return;
+    const activeView = document.querySelector(".view.is-visible");
+    if (activeView && activeView.id !== "secProfile") {
+      previousViewBeforeProfile = activeView.id;
+    } else {
+      previousViewBeforeProfile = lastMainView || "secDashboard";
+    }
+    populateProfileForm();
+    showView("secProfile");
+  });
+}
+
+if (btnProfileBack) {
+  btnProfileBack.addEventListener("click", () => {
+    showView(previousViewBeforeProfile || "secDashboard");
+  });
+}
+
+if (btnSignOut) {
+  btnSignOut.addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+    }
+  });
+}
+
+if (profileForm) {
+  profileForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!currentUser) return;
+
+    const name = profileName?.value.trim() || "";
+    const selectedTheme =
+      profileForm.querySelector('input[name="profileTheme"]:checked')?.value ||
+      currentTheme;
+
+    updateFeedback(profileFeedback);
+    setFormLoading(profileForm, true, "Salvando...");
+    try {
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        displayName: name,
+        theme: selectedTheme,
+        updatedAt: serverTimestamp(),
+      });
+
+      userProfileData = {
+        ...userProfileData,
+        displayName: name,
+        email: currentUser.email,
+        theme: selectedTheme === "light" ? "light" : "dark",
+      };
+
+      applyTheme(userProfileData.theme);
+      updateUserHeader();
+
+      if (name !== (currentUser.displayName || "")) {
+        await updateProfile(currentUser, { displayName: name || "" });
+      }
+
+      updateFeedback(
+        profileFeedback,
+        "Preferências atualizadas com sucesso!",
+        "success"
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar perfil:", error);
+      updateFeedback(
+        profileFeedback,
+        "Não foi possível salvar as alterações. Tente novamente."
+      );
+    } finally {
+      setFormLoading(profileForm, false);
+    }
+  });
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentUser = user;
+    try {
+      await loadUserProfile(user);
+    } catch (error) {
+      console.error("Erro ao carregar perfil do usuário:", error);
+      userProfileData = {
+        displayName: user.displayName || "",
+        email: user.email || "",
+        theme: currentTheme,
+      };
+      updateUserHeader();
+      populateProfileForm();
+    }
+    setAppVisibility(true);
+    subscribeDashboard();
+    showView("secDashboard");
+  } else {
+    currentUser = null;
+    userProfileData = { displayName: "", email: "", theme: currentTheme };
+    lastMainView = "secDashboard";
+    previousViewBeforeProfile = "secDashboard";
+    setAppVisibility(false);
+
+    if (unsubscribeDashboard) {
+      unsubscribeDashboard();
+      unsubscribeDashboard = null;
+    }
+    if (unsubscribeAmbientes) {
+      unsubscribeAmbientes();
+      unsubscribeAmbientes = null;
+    }
+    if (unsubscribeAmbiente) {
+      unsubscribeAmbiente();
+      unsubscribeAmbiente = null;
+    }
+
+    lojaSelecionada = null;
+    ambienteSelecionado = null;
+
+    clearDashboard();
+    clearUserHeader();
+    updateFeedback(profileFeedback);
+    updateFeedback(loginFeedback);
+    updateFeedback(registerFeedback);
+    updateFeedback(resetFeedback);
+    profileForm?.reset();
+    loginForm?.reset();
+    registerForm?.reset();
+    resetForm?.reset();
+    showAuthView("authLogin");
+  }
+});
 
 const lojaTitulo = el("lojaTitulo");
 const lojaDescricao = el("lojaDescricao");
@@ -203,63 +649,74 @@ const atualizarLojaSelecionada = (partial = {}) => {
   renderLojaResumo();
 };
 
-onSnapshot(
-  query(collection(db, "stores"), orderBy("createdAt", "desc")),
-  (snapshot) => {
-    const dash = el("dashboardStores");
+const clearDashboard = () => {
+  const dash = el("dashboardStores");
+  if (dash) {
     dash.innerHTML = "";
-    let hasStores = false;
-
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      const card = document.createElement("article");
-      card.className = "store-card";
-
-      const header = document.createElement("div");
-      header.className = "store-card__header";
-
-      const title = document.createElement("strong");
-      title.className = "store-card__title";
-      title.textContent = data.name || "Loja";
-
-      const badge = document.createElement("span");
-      badge.className = "badge";
-      badge.textContent = `${(data.scenarios || []).length} cenários`;
-
-      header.append(title, badge);
-      card.appendChild(header);
-
-      const site = document.createElement("span");
-      site.className = "muted";
-      site.textContent = formatUrlLabel(data.site || "") || "Nenhum site cadastrado";
-      card.appendChild(site);
-
-      if (data.description) {
-        const desc = document.createElement("p");
-        desc.className = "scenario-note";
-        desc.textContent = data.description;
-        card.appendChild(desc);
-      }
-
-      card.addEventListener("click", () => abrirLoja(docSnap.id, data));
-
-      dash.appendChild(card);
-      hasStores = true;
-    });
-
-    if (!hasStores) {
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      const title = document.createElement("h3");
-      title.textContent = "Nenhuma loja cadastrada";
-      const text = document.createElement("p");
-      text.className = "muted";
-      text.textContent = "Clique em \"+ Nova Loja\" para iniciar sua organização.";
-      empty.append(title, text);
-      dash.appendChild(empty);
-    }
   }
-);
+};
+
+const subscribeDashboard = () => {
+  if (unsubscribeDashboard) return;
+  unsubscribeDashboard = onSnapshot(
+    query(collection(db, "stores"), orderBy("createdAt", "desc")),
+    (snapshot) => {
+      const dash = el("dashboardStores");
+      if (!dash) return;
+      dash.innerHTML = "";
+      let hasStores = false;
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const card = document.createElement("article");
+        card.className = "store-card";
+
+        const header = document.createElement("div");
+        header.className = "store-card__header";
+
+        const title = document.createElement("strong");
+        title.className = "store-card__title";
+        title.textContent = data.name || "Loja";
+
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = `${(data.scenarios || []).length} cenários`;
+
+        header.append(title, badge);
+        card.appendChild(header);
+
+        const site = document.createElement("span");
+        site.className = "muted";
+        site.textContent = formatUrlLabel(data.site || "") || "Nenhum site cadastrado";
+        card.appendChild(site);
+
+        if (data.description) {
+          const desc = document.createElement("p");
+          desc.className = "scenario-note";
+          desc.textContent = data.description;
+          card.appendChild(desc);
+        }
+
+        card.addEventListener("click", () => abrirLoja(docSnap.id, data));
+
+        dash.appendChild(card);
+        hasStores = true;
+      });
+
+      if (!hasStores) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        const title = document.createElement("h3");
+        title.textContent = "Nenhuma loja cadastrada";
+        const text = document.createElement("p");
+        text.className = "muted";
+        text.textContent = "Clique em \"+ Nova Loja\" para iniciar sua organização.";
+        empty.append(title, text);
+        dash.appendChild(empty);
+      }
+    }
+  );
+};
 
 const abrirLoja = (id, data) => {
   if (unsubscribeAmbiente) {
