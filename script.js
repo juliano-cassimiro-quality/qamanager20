@@ -98,6 +98,20 @@ const statusLabels = {
   concluido: "Concluído",
 };
 
+const scenarioStageOptions = [
+  { value: "pre-deploy", label: "Pré-deploy" },
+  { value: "pos-deploy", label: "Pós-deploy" },
+  { value: "regressivo", label: "Regressivo" },
+  { value: "progressivo", label: "Progressivo" },
+];
+
+const scenarioStageLabels = scenarioStageOptions.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
+
+const DEFAULT_SCENARIO_STAGE = "pre-deploy";
+
 const removeDiacritics = (value) => {
   if (value === undefined || value === null) return "";
   return String(value)
@@ -114,6 +128,21 @@ const stripScenarioStage = (scenario) => {
   if (!scenario || typeof scenario !== "object") return {};
   const { stage, ...rest } = scenario;
   return rest;
+};
+
+const normalizeAmbienteScenario = (scenario) => {
+  if (!scenario || typeof scenario !== "object") return {};
+  const normalized = { ...scenario };
+
+  if (!statusLabels[normalized.status]) {
+    normalized.status = "pendente";
+  }
+
+  if (!scenarioStageLabels[normalized.stage]) {
+    normalized.stage = DEFAULT_SCENARIO_STAGE;
+  }
+
+  return normalized;
 };
 
 const normalizeCategoryKey = (value) =>
@@ -144,6 +173,32 @@ const downloadFile = (content, filename, mimeType) => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+};
+
+const setupTableCollapse = (button, target) => {
+  if (!button || !target) return;
+
+  const expandedLabel =
+    button.getAttribute("data-expanded-label") || "Minimizar tabela";
+  const collapsedLabel =
+    button.getAttribute("data-collapsed-label") || "Expandir tabela";
+
+  if (target.id && !button.getAttribute("aria-controls")) {
+    button.setAttribute("aria-controls", target.id);
+  }
+
+  const updateLabel = () => {
+    const isCollapsed = target.classList.contains("is-collapsed");
+    button.textContent = isCollapsed ? collapsedLabel : expandedLabel;
+    button.setAttribute("aria-expanded", String(!isCollapsed));
+  };
+
+  button.addEventListener("click", () => {
+    target.classList.toggle("is-collapsed");
+    updateLabel();
+  });
+
+  updateLabel();
 };
 
 const authShell = el("authShell");
@@ -586,6 +641,8 @@ const btnExportMarkdown = el("btnExportMarkdown");
 const btnExportPdf = el("btnExportPdf");
 const btnExportJson = el("btnExportJson");
 const scenarioImportInput = el("scenarioImportInput");
+const storeScenarioTableWrapper = el("storeScenarioTableWrapper");
+const btnToggleStoreScenarioTable = el("btnToggleStoreScenarioTable");
 
 if (scenarioCategoryFilter) {
   scenarioCategoryFilter.value = "all";
@@ -616,9 +673,19 @@ const ambienteIdentifier = el("ambienteIdentifier");
 const ambienteTestType = el("ambienteTestType");
 const ambienteTotalCenarios = el("ambienteTotalCenarios");
 const ambienteNotes = el("ambienteNotes");
-const cenariosExecucao = el("cenariosExecucao");
 const ambienteScenarioFilters = el("ambienteScenarioFilters");
 const ambienteScenarioCategoryFilter = el("ambienteScenarioCategoryFilter");
+const ambienteScenarioTable = el("ambienteCenariosTabela");
+const ambienteScenarioTableWrapper = el("ambienteScenarioTableWrapper");
+const btnToggleAmbienteScenarioTable = el("btnToggleAmbienteScenarioTable");
+const btnAmbienteExportMarkdown = el("btnAmbienteExportMarkdown");
+const btnAmbienteExportPdf = el("btnAmbienteExportPdf");
+
+setupTableCollapse(btnToggleStoreScenarioTable, storeScenarioTableWrapper);
+setupTableCollapse(
+  btnToggleAmbienteScenarioTable,
+  ambienteScenarioTableWrapper
+);
 
 const abrirModal = (id) => {
   const modal = el(id);
@@ -990,6 +1057,23 @@ function getFilteredScenarios(scenarios) {
   return scenarios.filter(
     (sc) => normalizeCategoryKey(sc.category) === scenarioCategoryFilterValue
   );
+}
+
+function getFilteredAmbienteScenarios(scenarios, withIndex = false) {
+  if (!Array.isArray(scenarios)) return [];
+
+  const results = [];
+  scenarios.forEach((scenario, index) => {
+    const categoria = normalizeCategoryKey(scenario?.category || "");
+    if (
+      ambienteScenarioCategoryFilterValue === "all" ||
+      categoria === ambienteScenarioCategoryFilterValue
+    ) {
+      results.push(withIndex ? { scenario, index } : scenario);
+    }
+  });
+
+  return results;
 }
 
 function renderScenarioFilters(scenarios) {
@@ -1439,6 +1523,173 @@ function exportScenariosAsJson() {
   );
 }
 
+function getAmbienteScenarioExportContext() {
+  if (!ambienteSelecionado) {
+    alert("Abra um ambiente para exportar os cenários.");
+    return null;
+  }
+
+  const listaFiltrada = getFilteredAmbienteScenarios(
+    ambienteSelecionado.scenarios || []
+  );
+
+  if (!listaFiltrada.length) {
+    alert("Não há cenários disponíveis para exportação com o filtro atual.");
+    return null;
+  }
+
+  const storeName =
+    toText(ambienteSelecionado.storeName || lojaSelecionada?.name) || "Loja";
+  const environmentKind = toText(ambienteSelecionado.kind) || "Ambiente";
+  const identifier = toText(ambienteSelecionado.identifier);
+  const environmentName = identifier
+    ? `${environmentKind} (${identifier})`
+    : environmentKind;
+
+  const scenarios = listaFiltrada.map((scenario) => {
+    const statusValue = statusLabels[scenario.status]
+      ? scenario.status
+      : "pendente";
+    const stageValue = scenarioStageLabels[scenario.stage]
+      ? scenario.stage
+      : DEFAULT_SCENARIO_STAGE;
+
+    return {
+      title: toText(scenario.title) || "Cenário",
+      statusValue,
+      statusLabel: statusLabels[statusValue],
+      stageValue,
+      stageLabel: scenarioStageLabels[stageValue],
+    };
+  });
+
+  const filenameBase = `${storeName} ${environmentKind}${
+    identifier ? ` ${identifier}` : ""
+  }`;
+
+  return {
+    environment: {
+      storeName,
+      name: environmentName,
+      kind: environmentKind,
+      identifier,
+      testType: toText(ambienteSelecionado.testType),
+    },
+    scenarios,
+    filenameSlug: slugify(filenameBase),
+  };
+}
+
+function exportAmbienteScenariosAsMarkdown() {
+  const context = getAmbienteScenarioExportContext();
+  if (!context) return;
+
+  const { environment, scenarios, filenameSlug } = context;
+  const heading = [environment.storeName, environment.name]
+    .filter(Boolean)
+    .join(" · ");
+
+  const lines = [`# Cenários - ${heading}`, ""];
+
+  const meta = [];
+  if (environment.testType) {
+    meta.push(`Tipo de teste do ambiente: ${environment.testType}`);
+  }
+
+  if (meta.length) {
+    meta.forEach((entry) => lines.push(`- ${entry}`));
+    lines.push("");
+  }
+
+  lines.push("| Nome | Status de teste | Tipo |");
+  lines.push("| --- | --- | --- |");
+
+  scenarios.forEach((sc) => {
+    lines.push(
+      `| ${escapeMarkdownCell(sc.title)} | ${escapeMarkdownCell(
+        sc.statusLabel
+      )} | ${escapeMarkdownCell(sc.stageLabel)} |`
+    );
+  });
+
+  downloadFile(
+    lines.join("\n"),
+    `ambiente-cenarios-${filenameSlug}.md`,
+    "text/markdown;charset=utf-8"
+  );
+}
+
+async function exportAmbienteScenariosAsPdf() {
+  const context = getAmbienteScenarioExportContext();
+  if (!context) return;
+
+  const { environment, scenarios, filenameSlug } = context;
+
+  try {
+    const JsPDF = await loadJsPDF();
+    const pdf = new JsPDF({ unit: "mm", format: "a4" });
+    pdf.setFont("helvetica", "normal");
+
+    const lineHeight = 6;
+    const maxY = 280;
+    let y = 30;
+
+    const heading = `Cenários - ${environment.storeName}`;
+
+    const addHeader = () => {
+      pdf.setFontSize(16);
+      pdf.text(heading, 14, 20);
+      pdf.setFontSize(12);
+      const subtitleParts = [environment.name];
+      if (environment.testType) {
+        subtitleParts.push(environment.testType);
+      }
+      const subtitle = subtitleParts.filter(Boolean).join(" • ");
+      if (subtitle) {
+        const wrapped = pdf.splitTextToSize(subtitle, 180);
+        pdf.text(wrapped, 14, 28);
+        y = 28 + wrapped.length * lineHeight + 4;
+      } else {
+        y = 30;
+      }
+    };
+
+    const ensureSpace = (lines = 1) => {
+      if (y + lineHeight * lines > maxY) {
+        pdf.addPage();
+        addHeader();
+      }
+    };
+
+    addHeader();
+
+    scenarios.forEach((sc, index) => {
+      const entries = [
+        `${index + 1}. ${sc.title}`,
+        `Status de teste: ${sc.statusLabel}`,
+        `Tipo: ${sc.stageLabel}`,
+      ];
+
+      entries.forEach((entry, entryIndex) => {
+        const wrapped = pdf.splitTextToSize(entry, 180);
+        ensureSpace(wrapped.length);
+        pdf.text(wrapped, 14, y);
+        y += wrapped.length * lineHeight;
+        if (entryIndex === entries.length - 1) {
+          y += 4;
+        }
+      });
+    });
+
+    pdf.save(`ambiente-cenarios-${filenameSlug}.pdf`);
+  } catch (error) {
+    console.error("Erro ao exportar cenários do ambiente em PDF:", error);
+    alert(
+      "Não foi possível exportar os cenários do ambiente em PDF. Tente novamente."
+    );
+  }
+}
+
 if (scenarioCategoryFilter) {
   scenarioCategoryFilter.addEventListener("change", () => {
     scenarioCategoryFilterValue = scenarioCategoryFilter.value || "all";
@@ -1450,7 +1701,7 @@ if (ambienteScenarioCategoryFilter) {
   ambienteScenarioCategoryFilter.addEventListener("change", () => {
     ambienteScenarioCategoryFilterValue =
       ambienteScenarioCategoryFilter.value || "all";
-    renderAmbienteScenarioList(ambienteSelecionado?.scenarios || []);
+    renderAmbienteScenarioTable(ambienteSelecionado?.scenarios || []);
   });
 }
 
@@ -1500,6 +1751,20 @@ if (btnExportJson) {
   btnExportJson.addEventListener("click", exportScenariosAsJson);
 }
 
+if (btnAmbienteExportMarkdown) {
+  btnAmbienteExportMarkdown.addEventListener(
+    "click",
+    exportAmbienteScenariosAsMarkdown
+  );
+}
+
+if (btnAmbienteExportPdf) {
+  btnAmbienteExportPdf.addEventListener(
+    "click",
+    exportAmbienteScenariosAsPdf
+  );
+}
+
 el("btnNovoAmbiente").addEventListener("click", () => {
   if (!lojaSelecionada) return;
   environmentForm.reset();
@@ -1526,6 +1791,7 @@ environmentForm.addEventListener("submit", async (event) => {
       ? data.scenarios.map((sc) => ({
           ...stripScenarioStage(sc),
           status: "pendente",
+          stage: DEFAULT_SCENARIO_STAGE,
         }))
       : [];
 
@@ -1641,7 +1907,7 @@ function abrirAmbiente(env, id) {
     id,
     ...env,
     scenarios: Array.isArray(env.scenarios)
-      ? env.scenarios.map(stripScenarioStage)
+      ? env.scenarios.map(normalizeAmbienteScenario)
       : [],
   };
   renderAmbiente();
@@ -1661,7 +1927,7 @@ function abrirAmbiente(env, id) {
       id: snap.id,
       ...data,
       scenarios: Array.isArray(data.scenarios)
-        ? data.scenarios.map(stripScenarioStage)
+        ? data.scenarios.map(normalizeAmbienteScenario)
         : [],
     };
     renderAmbiente();
@@ -1686,13 +1952,14 @@ function renderAmbiente() {
 
   const scenarios = Array.isArray(env.scenarios) ? env.scenarios : [];
   renderAmbienteScenarioFilters(scenarios);
-  renderAmbienteScenarioList(scenarios);
+  renderAmbienteScenarioTable(scenarios);
 }
 
 function renderAmbienteScenarioFilters(scenarios) {
   if (!ambienteScenarioCategoryFilter) return;
 
   const lista = Array.isArray(scenarios) ? scenarios : [];
+  const hasScenarios = lista.length > 0;
   const categories = new Map();
 
   lista.forEach((sc) => {
@@ -1729,117 +1996,175 @@ function renderAmbienteScenarioFilters(scenarios) {
   ambienteScenarioCategoryFilter.disabled = categories.size === 0;
 
   if (ambienteScenarioFilters) {
-    ambienteScenarioFilters.classList.toggle(
-      "is-hidden",
-      categories.size === 0
-    );
+    ambienteScenarioFilters.classList.remove("is-hidden");
+  }
+
+  if (btnAmbienteExportMarkdown) {
+    btnAmbienteExportMarkdown.disabled = !hasScenarios;
+  }
+  if (btnAmbienteExportPdf) {
+    btnAmbienteExportPdf.disabled = !hasScenarios;
   }
 }
 
-function renderAmbienteScenarioList(scenarios) {
-  if (!cenariosExecucao) return;
+function renderAmbienteScenarioTable(scenarios) {
+  if (!ambienteScenarioTable) return;
 
-  cenariosExecucao.innerHTML = "";
+  ambienteScenarioTable.innerHTML = `
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Categoria</th>
+        <th>Cluster</th>
+        <th>Automação</th>
+        <th>Status</th>
+        <th>Tipo</th>
+        <th>Observações</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = ambienteScenarioTable.querySelector("tbody");
+  if (!tbody) return;
 
   const lista = Array.isArray(scenarios) ? scenarios : [];
-  if (lista.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "empty-state";
-    const title = document.createElement("h3");
-    title.textContent = "Sem cenários neste ambiente";
-    const text = document.createElement("p");
-    text.className = "muted";
-    text.textContent = "Adicione cenários na loja para que apareçam aqui.";
-    empty.append(title, text);
-    cenariosExecucao.appendChild(empty);
+  if (!lista.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.className = "empty";
+    cell.textContent = "Sem cenários neste ambiente.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
     return;
   }
 
-  const itensFiltrados = [];
-  lista.forEach((sc, idx) => {
-    const categoria = normalizeCategoryKey(sc?.category || "");
-    if (
-      ambienteScenarioCategoryFilterValue === "all" ||
-      categoria === ambienteScenarioCategoryFilterValue
-    ) {
-      itensFiltrados.push({ scenario: sc, index: idx });
-    }
-  });
+  const itensFiltrados = getFilteredAmbienteScenarios(lista, true);
 
   if (!itensFiltrados.length) {
-    const empty = document.createElement("li");
-    empty.className = "empty-state";
-    const title = document.createElement("h3");
-    title.textContent = "Nenhum cenário encontrado";
-    const text = document.createElement("p");
-    text.className = "muted";
-    text.textContent =
-      "Ajuste o filtro de categoria para visualizar outros cenários.";
-    empty.append(title, text);
-    cenariosExecucao.appendChild(empty);
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.className = "empty";
+    cell.textContent =
+      "Nenhum cenário encontrado para o filtro selecionado.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
     return;
   }
 
   itensFiltrados.forEach(({ scenario: sc, index: idx }) => {
-    const item = document.createElement("li");
-    item.className = "scenario-row";
+    const row = document.createElement("tr");
 
-    const info = document.createElement("div");
-    info.className = "scenario-info";
+    const cellNome = document.createElement("td");
+    cellNome.textContent = sc.title || "Cenário";
 
-    const title = document.createElement("strong");
-    title.textContent = sc.title || "Cenário";
+    const cellCategoria = document.createElement("td");
+    cellCategoria.textContent = sc.category || "-";
 
-    const meta = document.createElement("span");
-    meta.className = "scenario-meta";
-    const details = [sc.category, sc.cluster, sc.automation]
-      .filter(Boolean)
-      .join(" • ");
-    meta.textContent = details || "Detalhes não informados";
+    const cellCluster = document.createElement("td");
+    cellCluster.textContent = sc.cluster || "-";
 
-    info.append(title, meta);
+    const cellAutomacao = document.createElement("td");
+    cellAutomacao.textContent = sc.automation || "-";
 
-    if (sc.obs) {
-      const note = document.createElement("span");
-      note.className = "scenario-note";
-      note.textContent = sc.obs;
-      info.appendChild(note);
-    }
-
-    const select = document.createElement("select");
-    const statusAtual = sc.status || "pendente";
-    select.className = `status status--${statusAtual}`;
+    const statusAtual = statusLabels[sc.status] ? sc.status : "pendente";
+    const cellStatus = document.createElement("td");
+    const statusSelect = document.createElement("select");
+    statusSelect.className = `status status--${statusAtual}`;
 
     ["pendente", "andamento", "concluido"].forEach((status) => {
       const option = document.createElement("option");
       option.value = status;
       option.textContent = statusLabels[status];
       option.selected = status === statusAtual;
-      select.appendChild(option);
+      statusSelect.appendChild(option);
     });
 
-    select.addEventListener("change", async () => {
-      const novoStatus = select.value;
-      select.className = `status status--${novoStatus}`;
-
-      const envId = ambienteSelecionado?.id;
-      if (!envId) return;
-
-      const atualizados = (ambienteSelecionado.scenarios || []).map(
-        (item, index) => (index === idx ? { ...item, status: novoStatus } : item)
-      );
-
-      select.disabled = true;
+    statusSelect.addEventListener("change", async () => {
+      const novoStatus = statusSelect.value;
+      statusSelect.className = `status status--${novoStatus}`;
+      statusSelect.disabled = true;
       try {
-        await updateDoc(doc(db, "environments", envId), { scenarios: atualizados });
+        await updateAmbienteScenario(idx, { status: novoStatus });
       } catch (error) {
         console.error("Erro ao atualizar status:", error);
       } finally {
-        select.disabled = false;
+        statusSelect.disabled = false;
       }
     });
 
-    item.append(info, select);
-    cenariosExecucao.appendChild(item);
+    cellStatus.appendChild(statusSelect);
+
+    const cellStage = document.createElement("td");
+    const stageSelect = document.createElement("select");
+    stageSelect.className = "scenario-stage";
+    const stageValue = scenarioStageLabels[sc.stage]
+      ? sc.stage
+      : DEFAULT_SCENARIO_STAGE;
+
+    scenarioStageOptions.forEach((option) => {
+      const opt = document.createElement("option");
+      opt.value = option.value;
+      opt.textContent = option.label;
+      opt.selected = option.value === stageValue;
+      stageSelect.appendChild(opt);
+    });
+
+    stageSelect.addEventListener("change", async () => {
+      const novoStage = stageSelect.value;
+      stageSelect.disabled = true;
+      try {
+        await updateAmbienteScenario(idx, { stage: novoStage });
+      } catch (error) {
+        console.error("Erro ao atualizar tipo do cenário:", error);
+      } finally {
+        stageSelect.disabled = false;
+      }
+    });
+
+    cellStage.appendChild(stageSelect);
+
+    const cellObs = document.createElement("td");
+    cellObs.textContent = sc.obs || "";
+
+    row.append(
+      cellNome,
+      cellCategoria,
+      cellCluster,
+      cellAutomacao,
+      cellStatus,
+      cellStage,
+      cellObs
+    );
+    tbody.appendChild(row);
   });
+}
+
+async function updateAmbienteScenario(index, updates) {
+  if (!ambienteSelecionado) return;
+  const envId = ambienteSelecionado.id;
+  if (!envId) return;
+
+  const lista = Array.isArray(ambienteSelecionado.scenarios)
+    ? ambienteSelecionado.scenarios
+    : [];
+  const atual = lista[index];
+  if (!atual || !updates || typeof updates !== "object") return;
+
+  const atualizado = normalizeAmbienteScenario({ ...atual, ...updates });
+  const hasChanges = Object.keys(updates).some(
+    (key) => atual[key] !== atualizado[key]
+  );
+
+  if (!hasChanges) return;
+
+  const proximos = lista.map((item, idx) =>
+    idx === index ? atualizado : item
+  );
+
+  ambienteSelecionado = { ...ambienteSelecionado, scenarios: proximos };
+
+  await updateDoc(doc(db, "environments", envId), { scenarios: proximos });
 }
