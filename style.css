@@ -646,6 +646,10 @@ table {
   overflow: hidden;
 }
 
+#cenariosTabela {
+  margin-top: 16px;
+}
+
 thead {
   background: var(--table-header);
 }
@@ -659,6 +663,44 @@ td {
 
 tbody tr:hover {
   background: var(--table-hover);
+}
+
+.scenario-toolbar {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.scenario-toolbar__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scenario-toolbar__filters label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.scenario-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.scenario-toolbar__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scenario-toolbar select {
+  min-width: 200px;
 }
 
 td.actions {
@@ -858,6 +900,15 @@ ul {
 
   .status {
     width: 100%;
+  }
+
+  .scenario-toolbar {
+    align-items: stretch;
+  }
+
+  .scenario-toolbar__actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 
