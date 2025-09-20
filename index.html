@@ -210,14 +210,6 @@
                   <option value="Ambos">Ambos</option>
                 </select>
               </div>
-              <div class="field">
-                <label for="scenarioStage">Fase do teste</label>
-                <select id="scenarioStage">
-                  <option value="pre-deploy">Pré-deploy</option>
-                  <option value="pos-deploy">Pós-deploy</option>
-                  <option value="regressivo">Regressivo</option>
-                </select>
-              </div>
               <div class="field field--wide">
                 <label for="scenarioObs">Observações</label>
                 <textarea
@@ -265,6 +257,17 @@
             />
 
             <table id="cenariosTabela"></table>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Pacotes de cenários de teste</h3>
+            </div>
+            <p class="muted">
+              Utilize coleções prontas conforme o estágio do projeto para acelerar
+              o planejamento de testes e padronizar entregas.
+            </p>
+            <div id="scenarioPackages" class="package-grid"></div>
           </div>
 
           <div class="card">
