@@ -97,14 +97,6 @@ const statusLabels = {
   concluido: "Concluído",
 };
 
-const DEFAULT_SCENARIO_STAGE = "pre-deploy";
-
-const scenarioStageLabels = {
-  "pre-deploy": "Pré-deploy",
-  "pos-deploy": "Pós-deploy",
-  regressivo: "Regressivo",
-};
-
 const removeDiacritics = (value) => {
   if (value === undefined || value === null) return "";
   return String(value)
@@ -117,21 +109,11 @@ const toText = (value) => {
   return String(value).trim();
 };
 
-const normalizeScenarioStage = (value) => {
-  const normalized = removeDiacritics(value)
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!normalized) return DEFAULT_SCENARIO_STAGE;
-  if (normalized.includes("pos")) return "pos-deploy";
-  if (normalized.includes("regress")) return "regressivo";
-  return DEFAULT_SCENARIO_STAGE;
+const stripScenarioStage = (scenario) => {
+  if (!scenario || typeof scenario !== "object") return {};
+  const { stage, ...rest } = scenario;
+  return rest;
 };
-
-const getScenarioStageLabel = (value) =>
-  scenarioStageLabels[normalizeScenarioStage(value)] ||
-  scenarioStageLabels[DEFAULT_SCENARIO_STAGE];
 
 const normalizeCategoryKey = (value) =>
   removeDiacritics(value)
@@ -596,7 +578,6 @@ const scenarioCategory = el("scenarioCategory");
 const scenarioAutomation = el("scenarioAutomation");
 const scenarioCluster = el("scenarioCluster");
 const scenarioObs = el("scenarioObs");
-const scenarioStage = el("scenarioStage");
 const scenarioCategoryFilter = el("scenarioCategoryFilter");
 const btnImportCsv = el("btnImportCsv");
 const btnImportJson = el("btnImportJson");
@@ -817,10 +798,7 @@ const abrirLoja = (id, data) => {
     description: data.description || "",
     site: normalizeUrl(data.site || ""),
     scenarios: Array.isArray(data.scenarios)
-      ? data.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
-        }))
+      ? data.scenarios.map(stripScenarioStage)
       : [],
     scenarioCount: Array.isArray(data.scenarios) ? data.scenarios.length : 0,
     environmentCount: 0,
@@ -945,25 +923,18 @@ scenarioForm.addEventListener("submit", async (event) => {
     automation: scenarioAutomation.value,
     cluster: scenarioCluster.value,
     obs: scenarioObs.value.trim(),
-    stage: normalizeScenarioStage(scenarioStage?.value),
   };
 
   const ref = doc(db, "stores", lojaSelecionada.id);
   const snap = await getDoc(ref);
   const data = snap.data();
   const arr = Array.isArray(data?.scenarios)
-    ? data.scenarios.map((item) => ({
-        ...item,
-        stage: normalizeScenarioStage(item.stage),
-      }))
+    ? data.scenarios.map(stripScenarioStage)
     : [];
   arr.push(scenario);
 
   await updateDoc(ref, { scenarios: arr, scenarioCount: arr.length });
   scenarioForm.reset();
-  if (scenarioStage) {
-    scenarioStage.value = DEFAULT_SCENARIO_STAGE;
-  }
   loadCenariosTabela(lojaSelecionada.id);
 });
 
@@ -983,7 +954,6 @@ async function loadCenariosTabela(id) {
         <th>Categoria</th>
         <th>Automação</th>
         <th>Cluster</th>
-        <th>Fase</th>
         <th>Observações</th>
         <th></th>
       </tr>
@@ -992,10 +962,7 @@ async function loadCenariosTabela(id) {
   `;
 
   const scenarios = Array.isArray(data.scenarios)
-    ? data.scenarios.map((sc) => ({
-        ...sc,
-        stage: normalizeScenarioStage(sc.stage),
-      }))
+    ? data.scenarios.map(stripScenarioStage)
     : [];
 
   lojaSelecionada = {
@@ -1070,7 +1037,7 @@ function renderScenarioTableRows(scenarios) {
   if (!filtered.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 6;
     cell.className = "empty";
     const hasScenarios = Array.isArray(scenarios) && scenarios.length > 0;
     cell.textContent = hasScenarios
@@ -1097,12 +1064,6 @@ function renderScenarioTableRows(scenarios) {
 
     const cellCluster = document.createElement("td");
     cellCluster.textContent = sc.cluster || "-";
-
-    const cellStage = document.createElement("td");
-    const stageBadge = document.createElement("span");
-    stageBadge.className = "tag";
-    stageBadge.textContent = getScenarioStageLabel(sc.stage);
-    cellStage.appendChild(stageBadge);
 
     const cellObs = document.createElement("td");
     cellObs.textContent = sc.obs || "";
@@ -1138,7 +1099,6 @@ function renderScenarioTableRows(scenarios) {
       cellCategoria,
       cellAuto,
       cellCluster,
-      cellStage,
       cellObs,
       cellActions
     );
@@ -1263,16 +1223,12 @@ function sanitizeScenarioInput(raw) {
       normalized.notes
   );
 
-  const stageRaw =
-    normalized.fase || normalized.stage || normalized.etapa || normalized.ciclo;
-
   return {
     title,
     category,
     automation,
     cluster,
     obs,
-    stage: normalizeScenarioStage(stageRaw),
   };
 }
 
@@ -1298,10 +1254,7 @@ async function handleScenarioImport(type, file) {
     const snap = await getDoc(ref);
     const data = snap.data() || {};
     const current = Array.isArray(data.scenarios)
-      ? data.scenarios.map((item) => ({
-          ...item,
-          stage: normalizeScenarioStage(item.stage),
-        }))
+      ? data.scenarios.map(stripScenarioStage)
       : [];
 
     const merged = [...current, ...scenariosToAdd];
@@ -1346,15 +1299,15 @@ function exportScenariosAsMarkdown() {
   const lines = [
     `# Cenários - ${lojaSelecionada.name || "Loja"}`,
     "",
-    "| Título | Categoria | Automação | Cluster | Fase | Observações |",
-    "| --- | --- | --- | --- | --- | --- |",
+    "| Título | Categoria | Automação | Cluster | Observações |",
+    "| --- | --- | --- | --- | --- |",
     ...scenarios.map(
       (sc) =>
         `| ${escapeMarkdownCell(sc.title || "-")} | ${escapeMarkdownCell(
           sc.category || "-"
         )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
           sc.cluster || "-"
-        )} | ${escapeMarkdownCell(getScenarioStageLabel(sc.stage))} | ${escapeMarkdownCell(
+        )} | ${escapeMarkdownCell(
           sc.obs || ""
         )} |`
     ),
@@ -1403,7 +1356,6 @@ async function exportScenariosAsPdf() {
         `Categoria: ${sc.category || "-"}`,
         `Automação: ${sc.automation || "-"}`,
         `Cluster: ${sc.cluster || "-"}`,
-        `Fase: ${getScenarioStageLabel(sc.stage)}`,
       ];
 
       if (sc.obs) {
@@ -1501,8 +1453,7 @@ environmentForm.addEventListener("submit", async (event) => {
     const data = snap.data() || lojaSelecionada;
     const scenarios = Array.isArray(data.scenarios)
       ? data.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
+          ...stripScenarioStage(sc),
           status: "pendente",
         }))
       : [];
@@ -1608,10 +1559,7 @@ function abrirAmbiente(env, id) {
     id,
     ...env,
     scenarios: Array.isArray(env.scenarios)
-      ? env.scenarios.map((sc) => ({
-          ...sc,
-          stage: normalizeScenarioStage(sc.stage),
-        }))
+      ? env.scenarios.map(stripScenarioStage)
       : [],
   };
   renderAmbiente();
@@ -1631,10 +1579,7 @@ function abrirAmbiente(env, id) {
       id: snap.id,
       ...data,
       scenarios: Array.isArray(data.scenarios)
-        ? data.scenarios.map((sc) => ({
-            ...sc,
-            stage: normalizeScenarioStage(sc.stage),
-          }))
+        ? data.scenarios.map(stripScenarioStage)
         : [],
     };
     renderAmbiente();
@@ -1685,12 +1630,7 @@ function renderAmbiente() {
 
     const meta = document.createElement("span");
     meta.className = "scenario-meta";
-    const details = [
-      getScenarioStageLabel(sc.stage),
-      sc.category,
-      sc.cluster,
-      sc.automation,
-    ]
+    const details = [sc.category, sc.cluster, sc.automation]
       .filter(Boolean)
       .join(" • ");
     meta.textContent = details || "Detalhes não informados";
