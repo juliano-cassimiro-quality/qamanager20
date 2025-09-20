@@ -250,6 +250,18 @@
                     Exportar PDF
                   </button>
                 </div>
+                <div class="scenario-toolbar__group">
+                  <button
+                    type="button"
+                    id="btnToggleStoreScenarioTable"
+                    class="ghost"
+                    data-expanded-label="Minimizar tabela"
+                    data-collapsed-label="Expandir tabela"
+                    aria-expanded="true"
+                  >
+                    Minimizar tabela
+                  </button>
+                </div>
               </div>
             </div>
             <input
@@ -259,7 +271,9 @@
               style="display: none"
             />
 
-            <table id="cenariosTabela"></table>
+            <div class="table-wrapper" id="storeScenarioTableWrapper">
+              <table id="cenariosTabela"></table>
+            </div>
           </div>
 
           <div class="card">
@@ -320,8 +334,40 @@
                   <option value="all">Todas as categorias</option>
                 </select>
               </div>
+              <div class="scenario-toolbar__actions">
+                <div class="scenario-toolbar__group">
+                  <button
+                    type="button"
+                    id="btnAmbienteExportMarkdown"
+                    class="ghost"
+                  >
+                    Exportar Markdown
+                  </button>
+                  <button
+                    type="button"
+                    id="btnAmbienteExportPdf"
+                    class="ghost"
+                  >
+                    Exportar PDF
+                  </button>
+                </div>
+                <div class="scenario-toolbar__group">
+                  <button
+                    type="button"
+                    id="btnToggleAmbienteScenarioTable"
+                    class="ghost"
+                    data-expanded-label="Minimizar tabela"
+                    data-collapsed-label="Expandir tabela"
+                    aria-expanded="true"
+                  >
+                    Minimizar tabela
+                  </button>
+                </div>
+              </div>
             </div>
-            <ul id="cenariosExecucao" class="scenario-list"></ul>
+            <div class="table-wrapper" id="ambienteScenarioTableWrapper">
+              <table id="ambienteCenariosTabela"></table>
+            </div>
           </div>
         </section>
 
