@@ -59,6 +59,7 @@ let confirmHandler = null;
 let unsubscribeAmbientes = null;
 let unsubscribeAmbiente = null;
 let scenarioCategoryFilterValue = "all";
+let ambienteScenarioCategoryFilterValue = "all";
 let pendingScenarioImportType = null;
 let jsPDFConstructor = null;
 
@@ -616,6 +617,8 @@ const ambienteTestType = el("ambienteTestType");
 const ambienteTotalCenarios = el("ambienteTotalCenarios");
 const ambienteNotes = el("ambienteNotes");
 const cenariosExecucao = el("cenariosExecucao");
+const ambienteScenarioFilters = el("ambienteScenarioFilters");
+const ambienteScenarioCategoryFilter = el("ambienteScenarioCategoryFilter");
 
 const abrirModal = (id) => {
   const modal = el(id);
@@ -1443,6 +1446,14 @@ if (scenarioCategoryFilter) {
   });
 }
 
+if (ambienteScenarioCategoryFilter) {
+  ambienteScenarioCategoryFilter.addEventListener("change", () => {
+    ambienteScenarioCategoryFilterValue =
+      ambienteScenarioCategoryFilter.value || "all";
+    renderAmbienteScenarioList(ambienteSelecionado?.scenarios || []);
+  });
+}
+
 const triggerScenarioImport = (type) => {
   if (!scenarioImportInput) return;
   if (!lojaSelecionada) {
@@ -1615,6 +1626,17 @@ function abrirAmbiente(env, id) {
     unsubscribeAmbiente();
   }
 
+  ambienteScenarioCategoryFilterValue = "all";
+  if (ambienteScenarioCategoryFilter) {
+    ambienteScenarioCategoryFilter.innerHTML =
+      '<option value="all">Todas as categorias</option>';
+    ambienteScenarioCategoryFilter.value = "all";
+    ambienteScenarioCategoryFilter.disabled = true;
+  }
+  if (ambienteScenarioFilters) {
+    ambienteScenarioFilters.classList.add("is-hidden");
+  }
+
   ambienteSelecionado = {
     id,
     ...env,
@@ -1662,10 +1684,65 @@ function renderAmbiente() {
   ambienteNotes.textContent = env.notes || "Nenhuma observação registrada para este ambiente.";
   ambienteNotes.classList.toggle("muted", !env.notes);
 
-  cenariosExecucao.innerHTML = "";
   const scenarios = Array.isArray(env.scenarios) ? env.scenarios : [];
+  renderAmbienteScenarioFilters(scenarios);
+  renderAmbienteScenarioList(scenarios);
+}
 
-  if (!scenarios.length) {
+function renderAmbienteScenarioFilters(scenarios) {
+  if (!ambienteScenarioCategoryFilter) return;
+
+  const lista = Array.isArray(scenarios) ? scenarios : [];
+  const categories = new Map();
+
+  lista.forEach((sc) => {
+    const label = toText(sc?.category);
+    const key = normalizeCategoryKey(label);
+    if (!label || !key) return;
+    if (!categories.has(key)) {
+      categories.set(key, label);
+    }
+  });
+
+  ambienteScenarioCategoryFilter.innerHTML = "";
+
+  const allOption = document.createElement("option");
+  allOption.value = "all";
+  allOption.textContent = "Todas as categorias";
+  ambienteScenarioCategoryFilter.appendChild(allOption);
+
+  categories.forEach((label, key) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = label;
+    ambienteScenarioCategoryFilter.appendChild(option);
+  });
+
+  if (
+    ambienteScenarioCategoryFilterValue !== "all" &&
+    !categories.has(ambienteScenarioCategoryFilterValue)
+  ) {
+    ambienteScenarioCategoryFilterValue = "all";
+  }
+
+  ambienteScenarioCategoryFilter.value = ambienteScenarioCategoryFilterValue;
+  ambienteScenarioCategoryFilter.disabled = categories.size === 0;
+
+  if (ambienteScenarioFilters) {
+    ambienteScenarioFilters.classList.toggle(
+      "is-hidden",
+      categories.size === 0
+    );
+  }
+}
+
+function renderAmbienteScenarioList(scenarios) {
+  if (!cenariosExecucao) return;
+
+  cenariosExecucao.innerHTML = "";
+
+  const lista = Array.isArray(scenarios) ? scenarios : [];
+  if (lista.length === 0) {
     const empty = document.createElement("li");
     empty.className = "empty-state";
     const title = document.createElement("h3");
@@ -1678,7 +1755,32 @@ function renderAmbiente() {
     return;
   }
 
-  scenarios.forEach((sc, idx) => {
+  const itensFiltrados = [];
+  lista.forEach((sc, idx) => {
+    const categoria = normalizeCategoryKey(sc?.category || "");
+    if (
+      ambienteScenarioCategoryFilterValue === "all" ||
+      categoria === ambienteScenarioCategoryFilterValue
+    ) {
+      itensFiltrados.push({ scenario: sc, index: idx });
+    }
+  });
+
+  if (!itensFiltrados.length) {
+    const empty = document.createElement("li");
+    empty.className = "empty-state";
+    const title = document.createElement("h3");
+    title.textContent = "Nenhum cenário encontrado";
+    const text = document.createElement("p");
+    text.className = "muted";
+    text.textContent =
+      "Ajuste o filtro de categoria para visualizar outros cenários.";
+    empty.append(title, text);
+    cenariosExecucao.appendChild(empty);
+    return;
+  }
+
+  itensFiltrados.forEach(({ scenario: sc, index: idx }) => {
     const item = document.createElement("li");
     item.className = "scenario-row";
 
@@ -1723,8 +1825,8 @@ function renderAmbiente() {
       const envId = ambienteSelecionado?.id;
       if (!envId) return;
 
-      const atualizados = (ambienteSelecionado.scenarios || []).map((item, index) =>
-        index === idx ? { ...item, status: novoStatus } : item
+      const atualizados = (ambienteSelecionado.scenarios || []).map(
+        (item, index) => (index === idx ? { ...item, status: novoStatus } : item)
       );
 
       select.disabled = true;
