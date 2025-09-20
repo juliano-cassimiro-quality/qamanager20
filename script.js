@@ -98,20 +98,6 @@ const statusLabels = {
   concluido: "Concluído",
 };
 
-const scenarioStageOptions = [
-  { value: "pre-deploy", label: "Pré-deploy" },
-  { value: "pos-deploy", label: "Pós-deploy" },
-  { value: "regressivo", label: "Regressivo" },
-  { value: "progressivo", label: "Progressivo" },
-];
-
-const scenarioStageLabels = scenarioStageOptions.reduce((acc, option) => {
-  acc[option.value] = option.label;
-  return acc;
-}, {});
-
-const DEFAULT_SCENARIO_STAGE = "pre-deploy";
-
 const removeDiacritics = (value) => {
   if (value === undefined || value === null) return "";
   return String(value)
@@ -136,10 +122,6 @@ const normalizeAmbienteScenario = (scenario) => {
 
   if (!statusLabels[normalized.status]) {
     normalized.status = "pendente";
-  }
-
-  if (!scenarioStageLabels[normalized.stage]) {
-    normalized.stage = DEFAULT_SCENARIO_STAGE;
   }
 
   return normalized;
@@ -632,7 +614,6 @@ const scenarioForm = el("scenarioForm");
 const scenarioTitle = el("scenarioTitle");
 const scenarioCategory = el("scenarioCategory");
 const scenarioAutomation = el("scenarioAutomation");
-const scenarioCluster = el("scenarioCluster");
 const scenarioObs = el("scenarioObs");
 const scenarioCategoryFilter = el("scenarioCategoryFilter");
 const btnImportCsv = el("btnImportCsv");
@@ -992,7 +973,6 @@ scenarioForm.addEventListener("submit", async (event) => {
     title: scenarioTitle.value.trim(),
     category: scenarioCategory.value.trim(),
     automation: scenarioAutomation.value,
-    cluster: scenarioCluster.value,
     obs: scenarioObs.value.trim(),
   };
 
@@ -1024,7 +1004,6 @@ async function loadCenariosTabela(id) {
         <th>Título</th>
         <th>Categoria</th>
         <th>Automação</th>
-        <th>Cluster</th>
         <th>Observações</th>
         <th></th>
       </tr>
@@ -1125,7 +1104,7 @@ function renderScenarioTableRows(scenarios) {
   if (!filtered.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 6;
+    cell.colSpan = 5;
     cell.className = "empty";
     const hasScenarios = Array.isArray(scenarios) && scenarios.length > 0;
     cell.textContent = hasScenarios
@@ -1149,9 +1128,6 @@ function renderScenarioTableRows(scenarios) {
 
     const cellAuto = document.createElement("td");
     cellAuto.textContent = sc.automation || "-";
-
-    const cellCluster = document.createElement("td");
-    cellCluster.textContent = sc.cluster || "-";
 
     const cellObs = document.createElement("td");
     cellObs.textContent = sc.obs || "";
@@ -1182,14 +1158,7 @@ function renderScenarioTableRows(scenarios) {
     });
     cellActions.appendChild(btn);
 
-    row.append(
-      cellTitulo,
-      cellCategoria,
-      cellAuto,
-      cellCluster,
-      cellObs,
-      cellActions
-    );
+    row.append(cellTitulo, cellCategoria, cellAuto, cellObs, cellActions);
     tbody.appendChild(row);
   });
 }
@@ -1297,12 +1266,6 @@ function sanitizeScenarioInput(raw) {
       normalized.automatizacao
   );
 
-  const cluster = toText(
-    normalized.cluster ||
-      normalized.plataforma ||
-      normalized.platform
-  );
-
   const obs = toText(
     normalized.observacoes ||
       normalized.obs ||
@@ -1315,7 +1278,6 @@ function sanitizeScenarioInput(raw) {
     title,
     category,
     automation,
-    cluster,
     obs,
   };
 }
@@ -1389,7 +1351,6 @@ function getScenarioExportContext() {
     title: toText(scenario.title),
     category: toText(scenario.category),
     automation: toText(scenario.automation),
-    cluster: toText(scenario.cluster),
     obs: toText(scenario.obs),
   }));
 
@@ -1425,15 +1386,15 @@ function exportScenariosAsMarkdown() {
   const lines = [
     `# Cenários - ${store.name}`,
     "",
-    "| Título | Categoria | Automação | Cluster | Observações |",
-    "| --- | --- | --- | --- | --- |",
+    "| Título | Categoria | Automação | Observações |",
+    "| --- | --- | --- | --- |",
     ...scenarios.map(
       (sc) =>
         `| ${escapeMarkdownCell(sc.title || "-")} | ${escapeMarkdownCell(
           sc.category || "-"
         )} | ${escapeMarkdownCell(sc.automation || "-")} | ${escapeMarkdownCell(
-          sc.cluster || "-"
-        )} | ${escapeMarkdownCell(sc.obs || "")} |`
+          sc.obs || ""
+        )} |`
     ),
   ];
 
@@ -1480,7 +1441,6 @@ async function exportScenariosAsPdf() {
         `${index + 1}. ${sc.title || "Cenário"}`,
         `Categoria: ${sc.category || "-"}`,
         `Automação: ${sc.automation || "-"}`,
-        `Cluster: ${sc.cluster || "-"}`,
       ];
 
       if (sc.obs) {
@@ -1550,16 +1510,11 @@ function getAmbienteScenarioExportContext() {
     const statusValue = statusLabels[scenario.status]
       ? scenario.status
       : "pendente";
-    const stageValue = scenarioStageLabels[scenario.stage]
-      ? scenario.stage
-      : DEFAULT_SCENARIO_STAGE;
 
     return {
       title: toText(scenario.title) || "Cenário",
       statusValue,
       statusLabel: statusLabels[statusValue],
-      stageValue,
-      stageLabel: scenarioStageLabels[stageValue],
     };
   });
 
@@ -1601,14 +1556,14 @@ function exportAmbienteScenariosAsMarkdown() {
     lines.push("");
   }
 
-  lines.push("| Nome | Status de teste | Tipo |");
-  lines.push("| --- | --- | --- |");
+  lines.push("| Nome | Status de teste |");
+  lines.push("| --- | --- |");
 
   scenarios.forEach((sc) => {
     lines.push(
       `| ${escapeMarkdownCell(sc.title)} | ${escapeMarkdownCell(
         sc.statusLabel
-      )} | ${escapeMarkdownCell(sc.stageLabel)} |`
+      )} |`
     );
   });
 
@@ -1667,7 +1622,6 @@ async function exportAmbienteScenariosAsPdf() {
       const entries = [
         `${index + 1}. ${sc.title}`,
         `Status de teste: ${sc.statusLabel}`,
-        `Tipo: ${sc.stageLabel}`,
       ];
 
       entries.forEach((entry, entryIndex) => {
@@ -1791,7 +1745,6 @@ environmentForm.addEventListener("submit", async (event) => {
       ? data.scenarios.map((sc) => ({
           ...stripScenarioStage(sc),
           status: "pendente",
-          stage: DEFAULT_SCENARIO_STAGE,
         }))
       : [];
 
@@ -2018,7 +1971,6 @@ function renderAmbienteScenarioTable(scenarios) {
         <th>Cluster</th>
         <th>Automação</th>
         <th>Status</th>
-        <th>Tipo</th>
         <th>Observações</th>
       </tr>
     </thead>
@@ -2032,7 +1984,7 @@ function renderAmbienteScenarioTable(scenarios) {
   if (!lista.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 6;
     cell.className = "empty";
     cell.textContent = "Sem cenários neste ambiente.";
     row.appendChild(cell);
@@ -2045,7 +1997,7 @@ function renderAmbienteScenarioTable(scenarios) {
   if (!itensFiltrados.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 6;
     cell.className = "empty";
     cell.textContent =
       "Nenhum cenário encontrado para o filtro selecionado.";
@@ -2097,35 +2049,6 @@ function renderAmbienteScenarioTable(scenarios) {
 
     cellStatus.appendChild(statusSelect);
 
-    const cellStage = document.createElement("td");
-    const stageSelect = document.createElement("select");
-    stageSelect.className = "scenario-stage";
-    const stageValue = scenarioStageLabels[sc.stage]
-      ? sc.stage
-      : DEFAULT_SCENARIO_STAGE;
-
-    scenarioStageOptions.forEach((option) => {
-      const opt = document.createElement("option");
-      opt.value = option.value;
-      opt.textContent = option.label;
-      opt.selected = option.value === stageValue;
-      stageSelect.appendChild(opt);
-    });
-
-    stageSelect.addEventListener("change", async () => {
-      const novoStage = stageSelect.value;
-      stageSelect.disabled = true;
-      try {
-        await updateAmbienteScenario(idx, { stage: novoStage });
-      } catch (error) {
-        console.error("Erro ao atualizar tipo do cenário:", error);
-      } finally {
-        stageSelect.disabled = false;
-      }
-    });
-
-    cellStage.appendChild(stageSelect);
-
     const cellObs = document.createElement("td");
     cellObs.textContent = sc.obs || "";
 
@@ -2135,7 +2058,6 @@ function renderAmbienteScenarioTable(scenarios) {
       cellCluster,
       cellAutomacao,
       cellStatus,
-      cellStage,
       cellObs
     );
     tbody.appendChild(row);
