@@ -64,6 +64,18 @@ let unsubscribeAmbiente = null;
 let scenarioCategoryFilterValue = "all";
 let pendingScenarioImportType = null;
 let jsPDFConstructor = null;
+const externalScriptPromises = new Map();
+let dashboardStoreSnapshot = [];
+let dashboardSearchTerm = "";
+let dashboardSortMode = "recent";
+let dashboardFilterMode = "all";
+const DASHBOARD_VIEW_STORAGE_KEY = "qa-dashboard-view-mode";
+const VALID_DASHBOARD_VIEWS = new Set(["grid", "list"]);
+const storedViewMode = localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+let dashboardViewMode = VALID_DASHBOARD_VIEWS.has(storedViewMode)
+  ? storedViewMode
+  : "grid";
+let dashboardLastSyncedAt = null;
 
 const el = (id) => document.getElementById(id);
 const showView = (id) => {
@@ -162,6 +174,130 @@ const formatShortDate = (value) => {
   });
 };
 
+const formatCount = (value) => Number(value || 0).toLocaleString("pt-BR");
+
+const getDashboardViewLabel = (mode = dashboardViewMode) =>
+  mode === "list" ? "Lista" : "Cards";
+
+const applyDashboardViewMode = () => {
+  if (!dashboardStoresContainer) return;
+  dashboardStoresContainer.dataset.view =
+    dashboardViewMode === "list" ? "list" : "grid";
+};
+
+const updateDashboardQuickView = () => {
+  const label = getDashboardViewLabel();
+  if (dashboardViewModeLabel) {
+    dashboardViewModeLabel.textContent = label;
+  }
+  if (dashboardQuickView) {
+    dashboardQuickView.textContent = label;
+  }
+};
+
+const updateDashboardViewButtons = () => {
+  if (!dashboardViewButtons.length) {
+    updateDashboardQuickView();
+    return;
+  }
+
+  dashboardViewButtons.forEach((button) => {
+    const value = button.dataset.dashboardView || "grid";
+    const isActive = value === dashboardViewMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+
+  updateDashboardQuickView();
+};
+
+const setDashboardViewMode = (mode, { persist = true } = {}) => {
+  const normalized = VALID_DASHBOARD_VIEWS.has(mode) ? mode : "grid";
+  if (dashboardViewMode === normalized) {
+    applyDashboardViewMode();
+    updateDashboardViewButtons();
+    return;
+  }
+
+  dashboardViewMode = normalized;
+  if (persist) {
+    localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, normalized);
+  }
+
+  applyDashboardViewMode();
+  updateDashboardViewButtons();
+};
+
+const updateDashboardFilterChips = () => {
+  if (!dashboardFilterChips.length) return;
+  dashboardFilterChips.forEach((chip) => {
+    const value = chip.dataset.dashboardFilter || "all";
+    const isActive = value === dashboardFilterMode;
+    chip.classList.toggle("is-active", isActive);
+    chip.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+};
+
+const updateDashboardFilterChipCounts = () => {
+  if (!dashboardFilterCountElements.length) return;
+
+  const counts = {
+    all: dashboardStoreSnapshot.length,
+    "with-execution": dashboardStoreSnapshot.filter((entry) => entry?.hasEnvironment).length,
+    "without-execution": dashboardStoreSnapshot.filter((entry) => !entry?.hasEnvironment).length,
+  };
+
+  dashboardFilterCountElements.forEach((element) => {
+    const key = element.getAttribute("data-dashboard-filter-count");
+    const value = counts[key] ?? 0;
+    element.textContent = formatCount(value);
+  });
+};
+
+const formatLastSynced = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+
+  if (diffMs < 30_000) {
+    return "Agora mesmo";
+  }
+
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  if (diffMinutes < 60) {
+    const plural = diffMinutes === 1 ? "minuto" : "minutos";
+    return `Há ${diffMinutes} ${plural}`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    const plural = diffHours === 1 ? "hora" : "horas";
+    return `Há ${diffHours} ${plural}`;
+  }
+
+  const dateLabel = date.toLocaleDateString("pt-BR");
+  const timeLabel = date.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${dateLabel} às ${timeLabel}`;
+};
+
+const updateDashboardLastSyncedLabel = () => {
+  if (!dashboardLastSyncedLabel) return;
+  dashboardLastSyncedLabel.textContent = formatLastSynced(dashboardLastSyncedAt);
+};
+
+const markDashboardSynced = (date = new Date()) => {
+  dashboardLastSyncedAt = date;
+  updateDashboardLastSyncedLabel();
+};
+
+const getTimeValue = (date) => (date instanceof Date ? date.getTime() : 0);
+
 const downloadFile = (content, filename, mimeType) => {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -184,6 +320,44 @@ const btnProfileBack = el("btnProfileBack");
 const dashboardStoresContainer = el("dashboardStores");
 const dashboardCoverageList = el("dashboardCoverageList");
 const dashboardCoverageSummary = el("dashboardCoverageSummary");
+const dashboardStatStores = el("dashboardStatStores");
+const dashboardStatActive = el("dashboardStatActive");
+const dashboardStatScenarios = el("dashboardStatScenarios");
+const dashboardStatCoverage = el("dashboardStatCoverage");
+const dashboardStatEnvironments = el("dashboardStatEnvironments");
+const dashboardStatIdle = el("dashboardStatIdle");
+const dashboardQuickIdle = el("dashboardQuickIdle");
+const dashboardQuickView = el("dashboardQuickView");
+const dashboardViewModeLabel = el("dashboardViewModeLabel");
+const dashboardLastSyncedLabel = el("dashboardLastSynced");
+const btnDashboardRefresh = el("btnDashboardRefresh");
+const dashboardViewButtons = Array.from(
+  document.querySelectorAll("[data-dashboard-view]")
+);
+const dashboardFilterChips = Array.from(
+  document.querySelectorAll("[data-dashboard-filter]")
+);
+const dashboardFilterCountElements = Array.from(
+  document.querySelectorAll("[data-dashboard-filter-count]")
+);
+const dashboardSearchInput = el("dashboardSearch");
+const dashboardSortSelect = el("dashboardSort");
+const dashboardFilterSelect = el("dashboardFilter");
+const btnDashboardResetFilters = el("btnDashboardResetFilters");
+const btnDashboardNewStore = el("btnDashboardNewStore");
+const btnDashboardOpenProfile = el("btnDashboardOpenProfile");
+let btnDashboardToggleTheme = el("btnDashboardToggleTheme");
+const btnNovaLoja = el("btnNovaLoja");
+
+const updateThemeToggleButtonLabel = (theme = currentTheme) => {
+  if (!btnDashboardToggleTheme) return;
+  btnDashboardToggleTheme.textContent =
+    theme === "dark" ? "Usar modo claro" : "Usar modo escuro";
+};
+
+document.addEventListener("qa-theme-change", (event) => {
+  updateThemeToggleButtonLabel(event.detail?.theme || currentTheme);
+});
 
 const loginForm = el("loginForm");
 const loginEmail = el("loginEmail");
@@ -219,6 +393,9 @@ const applyTheme = (theme) => {
   getThemeRadios().forEach((input) => {
     input.checked = input.value === normalized;
   });
+  document.dispatchEvent(
+    new CustomEvent("qa-theme-change", { detail: { theme: normalized } })
+  );
 };
 
 const updateFeedback = (element, message = "", type = "error") => {
@@ -747,65 +924,394 @@ const atualizarLojaSelecionada = (partial = {}) => {
   renderLojaResumo();
 };
 
+
+const computeDashboardEntry = (store) => {
+  if (!store) return null;
+
+  const scenarioCount = Array.isArray(store.scenarios)
+    ? store.scenarios.length
+    : typeof store.scenarioCount === "number"
+    ? store.scenarioCount
+    : 0;
+
+  const normalizedSite = normalizeUrl(store.site || "");
+  const siteLabel = normalizedSite ? formatUrlLabel(normalizedSite) : "";
+  const descriptionText = toText(store.description);
+
+  const relatedEnvironments = environmentsCache.filter(
+    (env) => env.storeId === store.id
+  );
+
+  let latestEnv = null;
+  let latestEnvValue = 0;
+
+  relatedEnvironments.forEach((env) => {
+    const envDate = toDateOrNull(env.updatedAt || env.createdAt);
+    const envValue = getTimeValue(envDate);
+    if (envValue > latestEnvValue) {
+      latestEnvValue = envValue;
+      latestEnv = env;
+    }
+  });
+
+  let total = scenarioCount;
+  let done = 0;
+  let running = 0;
+  let pending = scenarioCount;
+  let coverage = 0;
+
+  if (latestEnv && Array.isArray(latestEnv.scenarios)) {
+    const envScenarios = latestEnv.scenarios;
+    total = envScenarios.length;
+    envScenarios.forEach((scenario) => {
+      const status = toText(scenario.status).toLowerCase();
+      if (status === "concluido") {
+        done += 1;
+      } else if (status === "andamento") {
+        running += 1;
+      }
+    });
+    pending = Math.max(total - done - running, 0);
+    coverage = total ? Math.round((done / total) * 100) : 0;
+  } else {
+    pending = scenarioCount;
+    total = scenarioCount;
+    coverage = total ? Math.round((done / total) * 100) : 0;
+  }
+
+  const environmentLabel = latestEnv
+    ? [latestEnv.kind, latestEnv.identifier || latestEnv.testType]
+        .filter(Boolean)
+        .join(" • ")
+    : "";
+
+  const lastRun = latestEnvValue ? new Date(latestEnvValue) : null;
+  const storeUpdated = toDateOrNull(store.updatedAt);
+  const storeCreated = toDateOrNull(store.createdAt);
+  const lastActivityValue = Math.max(
+    latestEnvValue,
+    getTimeValue(storeUpdated),
+    getTimeValue(storeCreated)
+  );
+  const lastActivity = lastActivityValue ? new Date(lastActivityValue) : null;
+
+  const searchIndex = removeDiacritics(
+    `${store.name || ""} ${descriptionText} ${siteLabel}`
+  )
+    .toLowerCase()
+    .trim();
+
+  return {
+    id: store.id,
+    name: store.name || "Loja",
+    description: descriptionText,
+    scenarioCount,
+    environmentCount: relatedEnvironments.length,
+    coverage,
+    total,
+    done,
+    running,
+    pending: Math.max(pending, 0),
+    environmentLabel,
+    lastRun,
+    hasEnvironment: relatedEnvironments.length > 0,
+    lastActivity,
+    lastActivityValue,
+    storeCreatedAt: storeCreated,
+    storeUpdatedAt: storeUpdated,
+    searchIndex,
+    siteNormalized: normalizedSite,
+    siteLabel,
+    hasCoverageData: Boolean(latestEnv && total > 0),
+    scenariosDefined: scenarioCount > 0,
+    source: store,
+  };
+};
+
+const updateDashboardSnapshot = () => {
+  dashboardStoreSnapshot = storesCache
+    .map((store) => computeDashboardEntry(store))
+    .filter(Boolean);
+};
+
+const calculateAverageCoverage = (entries) => {
+  let sum = 0;
+  let count = 0;
+  entries.forEach((entry) => {
+    if (entry?.hasCoverageData) {
+      sum += entry.coverage;
+      count += 1;
+    }
+  });
+  return {
+    value: count > 0 ? Math.round(sum / count) : 0,
+    hasData: count > 0,
+  };
+};
+
+const getFilteredDashboardStores = () => {
+  let entries = dashboardStoreSnapshot.slice().filter(Boolean);
+  const normalizedTerm = removeDiacritics(dashboardSearchTerm || "")
+    .toLowerCase()
+    .trim();
+
+  if (normalizedTerm) {
+    entries = entries.filter((entry) => entry.searchIndex.includes(normalizedTerm));
+  }
+
+  if (dashboardFilterMode === "with-execution") {
+    entries = entries.filter((entry) => entry.hasEnvironment);
+  } else if (dashboardFilterMode === "without-execution") {
+    entries = entries.filter((entry) => !entry.hasEnvironment);
+  }
+
+  entries.sort((a, b) => {
+    switch (dashboardSortMode) {
+      case "name":
+        return a.name.localeCompare(b.name, "pt-BR");
+      case "coverage":
+        if (b.coverage !== a.coverage) return b.coverage - a.coverage;
+        if (b.scenarioCount !== a.scenarioCount) {
+          return b.scenarioCount - a.scenarioCount;
+        }
+        return a.name.localeCompare(b.name, "pt-BR");
+      case "scenarios":
+        if (b.scenarioCount !== a.scenarioCount) {
+          return b.scenarioCount - a.scenarioCount;
+        }
+        return a.name.localeCompare(b.name, "pt-BR");
+      case "recent":
+      default: {
+        if ((b.lastActivityValue || 0) !== (a.lastActivityValue || 0)) {
+          return (b.lastActivityValue || 0) - (a.lastActivityValue || 0);
+        }
+        return a.name.localeCompare(b.name, "pt-BR");
+      }
+    }
+  });
+
+  return entries;
+};
+
+function updateDashboardStats() {
+  if (dashboardStatStores) {
+    dashboardStatStores.textContent = formatCount(dashboardStoreSnapshot.length);
+  }
+
+  const withExecutions = dashboardStoreSnapshot.filter(
+    (entry) => entry?.hasEnvironment
+  ).length;
+
+  if (dashboardStatActive) {
+    dashboardStatActive.textContent = formatCount(withExecutions);
+  }
+
+  if (dashboardStatScenarios) {
+    const totalScenarios = dashboardStoreSnapshot.reduce(
+      (sum, entry) => sum + (entry?.scenarioCount || 0),
+      0
+    );
+    dashboardStatScenarios.textContent = formatCount(totalScenarios);
+  }
+
+  if (dashboardStatEnvironments) {
+    const totalEnvironments = dashboardStoreSnapshot.reduce(
+      (sum, entry) => sum + (entry?.environmentCount || 0),
+      0
+    );
+    dashboardStatEnvironments.textContent = formatCount(totalEnvironments);
+  }
+
+  const awaitingAttention = dashboardStoreSnapshot.filter(
+    (entry) => !entry?.hasEnvironment || !entry?.hasCoverageData
+  ).length;
+
+  if (dashboardStatIdle) {
+    dashboardStatIdle.textContent = formatCount(awaitingAttention);
+  }
+
+  if (dashboardQuickIdle) {
+    dashboardQuickIdle.textContent = formatCount(awaitingAttention);
+  }
+
+  if (dashboardStatCoverage) {
+    const average = calculateAverageCoverage(dashboardStoreSnapshot);
+    dashboardStatCoverage.textContent = average.hasData
+      ? `${average.value}%`
+      : "—";
+  }
+}
+
 function renderDashboardStores() {
   if (!dashboardStoresContainer) return;
 
+  applyDashboardViewMode();
   dashboardStoresContainer.innerHTML = "";
 
-  if (!storesCache.length) {
+  const entries = getFilteredDashboardStores();
+  const hasFiltersActive =
+    Boolean(dashboardSearchTerm && dashboardSearchTerm.trim()) ||
+    dashboardFilterMode !== "all" ||
+    dashboardSortMode !== "recent";
+
+  if (!entries.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
 
     const title = document.createElement("h3");
-    title.textContent = "Nenhuma loja cadastrada";
+    title.textContent = hasFiltersActive
+      ? "Nenhuma loja encontrada"
+      : "Nenhuma loja cadastrada";
 
     const text = document.createElement("p");
     text.className = "muted";
-    text.textContent = "Clique em \"+ Nova Loja\" para iniciar sua organização.";
+    text.textContent = hasFiltersActive
+      ? "Ajuste os filtros ou limpe a busca para visualizar todas as lojas."
+      : "Clique em "+ Nova Loja" para iniciar sua organização.";
 
     empty.append(title, text);
+
+    if (hasFiltersActive) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "ghost";
+      action.textContent = "Limpar filtros";
+      action.addEventListener("click", () => {
+        resetDashboardFilters(true);
+      });
+      empty.appendChild(action);
+    }
+
     dashboardStoresContainer.appendChild(empty);
     return;
   }
 
-  storesCache.forEach((store) => {
+  entries.forEach((entry) => {
     const card = document.createElement("article");
     card.className = "store-card";
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.dataset.storeId = entry.id;
 
     const header = document.createElement("div");
     header.className = "store-card__header";
 
     const title = document.createElement("strong");
     title.className = "store-card__title";
-    title.textContent = store.name || "Loja";
+    title.textContent = entry.name;
+    header.appendChild(title);
 
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    const scenarioCount = Array.isArray(store.scenarios)
-      ? store.scenarios.length
-      : typeof store.scenarioCount === "number"
-      ? store.scenarioCount
-      : 0;
-    badge.textContent = `${scenarioCount} cenários`;
+    const coverageBadge = document.createElement("span");
+    coverageBadge.className = `badge store-card__coverage${
+      entry.hasCoverageData ? "" : " is-idle"
+    }`;
+    coverageBadge.textContent = entry.hasCoverageData
+      ? `${entry.coverage}% cobertura`
+      : entry.scenariosDefined
+      ? "Aguardando execução"
+      : "Nova loja";
+    header.appendChild(coverageBadge);
 
-    header.append(title, badge);
     card.appendChild(header);
 
-    const site = document.createElement("span");
-    site.className = "muted";
-    site.textContent =
-      formatUrlLabel(store.site || "") || "Nenhum site cadastrado";
-    card.appendChild(site);
+    const scenarioTag = document.createElement("span");
+    scenarioTag.className = "tag";
+    scenarioTag.textContent = `${formatCount(entry.scenarioCount)} ${
+      entry.scenarioCount === 1 ? "cenário" : "cenários"
+    }`;
+    card.appendChild(scenarioTag);
 
-    const descriptionText = toText(store.description);
-    if (descriptionText) {
+    if (entry.siteNormalized) {
+      const siteLink = document.createElement("a");
+      siteLink.className = "link store-card__site";
+      siteLink.href = entry.siteNormalized;
+      siteLink.target = "_blank";
+      siteLink.rel = "noopener";
+      siteLink.textContent = entry.siteLabel;
+      siteLink.addEventListener("click", (event) => event.stopPropagation());
+      card.appendChild(siteLink);
+    } else {
+      const site = document.createElement("span");
+      site.className = "muted store-card__site";
+      site.textContent = "Nenhum site cadastrado";
+      card.appendChild(site);
+    }
+
+    if (entry.description) {
       const desc = document.createElement("p");
       desc.className = "scenario-note";
-      desc.textContent = descriptionText;
+      desc.textContent = entry.description;
       card.appendChild(desc);
     }
 
-    card.addEventListener("click", () => abrirLoja(store.id, store));
+    const metrics = document.createElement("div");
+    metrics.className = "store-card__metrics";
+
+    const addMetric = (value, label) => {
+      const pill = document.createElement("span");
+      pill.className = "metric-pill";
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      const meta = document.createElement("span");
+      meta.textContent = label;
+      pill.append(strong, meta);
+      return pill;
+    };
+
+    metrics.appendChild(
+      addMetric(entry.hasCoverageData ? `${entry.coverage}%` : "—", "Cobertura")
+    );
+    metrics.appendChild(
+      addMetric(
+        formatCount(entry.scenarioCount),
+        entry.scenarioCount === 1 ? "Cenário" : "Cenários"
+      )
+    );
+    metrics.appendChild(
+      addMetric(
+        formatCount(entry.environmentCount),
+        entry.environmentCount === 1 ? "Ambiente" : "Ambientes"
+      )
+    );
+    card.appendChild(metrics);
+
+    if (entry.environmentLabel) {
+      const env = document.createElement("span");
+      env.className = "store-card__environment";
+      env.textContent = entry.environmentLabel;
+      card.appendChild(env);
+    }
+
+    const footer = document.createElement("div");
+    footer.className = "store-card__footer";
+
+    const activity = document.createElement("span");
+    activity.className = "store-card__activity";
+    if (entry.lastRun) {
+      activity.textContent = `Última execução: ${formatShortDate(entry.lastRun)}`;
+    } else if (entry.hasEnvironment) {
+      activity.textContent = "Execuções sem dados registrados";
+    } else if (entry.scenariosDefined) {
+      activity.textContent = "Aguardando criação de ambiente";
+    } else {
+      activity.textContent = "Cadastre cenários para começar";
+    }
+    footer.appendChild(activity);
+
+    const hint = document.createElement("span");
+    hint.className = "store-card__action";
+    hint.textContent = "Ver detalhes";
+    footer.appendChild(hint);
+
+    card.appendChild(footer);
+
+    card.addEventListener("click", () => abrirLoja(entry.id, entry.source));
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        abrirLoja(entry.id, entry.source);
+      }
+    });
 
     dashboardStoresContainer.appendChild(card);
   });
@@ -816,102 +1322,27 @@ function updateTestCoverageCard() {
 
   dashboardCoverageList.innerHTML = "";
 
-  if (!storesCache.length) {
+  if (!dashboardStoreSnapshot.length) {
     const empty = document.createElement("div");
     empty.className = "coverage-empty";
     empty.textContent = "Cadastre uma loja para acompanhar a cobertura.";
     dashboardCoverageList.appendChild(empty);
     if (dashboardCoverageSummary) {
-      dashboardCoverageSummary.textContent = "Média geral: 0%";
+      dashboardCoverageSummary.textContent = "Média geral: —";
     }
     return;
   }
 
-  const coverageData = storesCache.map((store) => {
-    const storeEnvironments = environmentsCache.filter(
-      (env) => env.storeId === store.id
-    );
+  const coverageEntries = dashboardStoreSnapshot
+    .slice()
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (b.coverage !== a.coverage) return b.coverage - a.coverage;
+      if (b.total !== a.total) return b.total - a.total;
+      return a.name.localeCompare(b.name, "pt-BR");
+    });
 
-    const latestEnvironment = storeEnvironments.reduce((latest, env) => {
-      const latestDate = toDateOrNull(latest?.updatedAt || latest?.createdAt);
-      const envDate = toDateOrNull(env?.updatedAt || env?.createdAt);
-      const latestMillis = latestDate ? latestDate.getTime() : 0;
-      const envMillis = envDate ? envDate.getTime() : 0;
-      return envMillis > latestMillis ? env : latest;
-    }, null);
-
-    const definedTotal = Array.isArray(store.scenarios)
-      ? store.scenarios.length
-      : typeof store.scenarioCount === "number"
-      ? store.scenarioCount
-      : 0;
-
-    let total = 0;
-    let done = 0;
-    let running = 0;
-    let pending = 0;
-    let environmentLabel = "";
-    let lastRun = null;
-    let hasEnvironment = false;
-
-    if (latestEnvironment && Array.isArray(latestEnvironment.scenarios)) {
-      const envScenarios = latestEnvironment.scenarios;
-      total = envScenarios.length;
-      envScenarios.forEach((scenario) => {
-        const status = toText(scenario.status).toLowerCase();
-        if (status === "concluido") {
-          done += 1;
-        } else if (status === "andamento") {
-          running += 1;
-        } else {
-          pending += 1;
-        }
-      });
-      pending = Math.max(total - done - running, 0);
-      hasEnvironment = true;
-      environmentLabel = [
-        latestEnvironment.kind,
-        latestEnvironment.identifier || latestEnvironment.testType,
-      ]
-        .filter(Boolean)
-        .join(" • ");
-      lastRun = latestEnvironment.updatedAt || latestEnvironment.createdAt || null;
-    } else {
-      total = definedTotal;
-      pending = total;
-    }
-
-    const coverage = total ? Math.round((done / total) * 100) : 0;
-
-    return {
-      id: store.id,
-      name: store.name || "Loja",
-      coverage,
-      total,
-      done,
-      running,
-      pending: Math.max(pending, 0),
-      environmentLabel,
-      lastRun,
-      hasEnvironment,
-    };
-  });
-
-  coverageData.sort((a, b) => {
-    if (b.coverage !== a.coverage) return b.coverage - a.coverage;
-    if (b.total !== a.total) return b.total - a.total;
-    return a.name.localeCompare(b.name, "pt-BR");
-  });
-
-  let considered = 0;
-  let sumCoverage = 0;
-
-  coverageData.forEach((item) => {
-    if (item.total > 0) {
-      considered += 1;
-      sumCoverage += item.coverage;
-    }
-
+  coverageEntries.forEach((item) => {
     const row = document.createElement("div");
     row.className = "coverage-row";
 
@@ -924,7 +1355,12 @@ function updateTestCoverageCard() {
 
     const value = document.createElement("span");
     value.className = "coverage-row__value";
-    value.textContent = `${item.coverage}%`;
+    if (item.hasCoverageData) {
+      value.textContent = `${item.coverage}%`;
+    } else {
+      value.textContent = "—";
+      value.classList.add("is-idle");
+    }
 
     header.append(name, value);
     row.appendChild(header);
@@ -932,19 +1368,20 @@ function updateTestCoverageCard() {
     const progress = document.createElement("div");
     progress.className = "coverage-progress";
 
-    const appendBar = (percent, className) => {
-      const normalized = Math.max(0, Math.min(100, percent));
-      if (normalized <= 0) return;
-      const bar = document.createElement("span");
-      bar.className = `coverage-progress__bar ${className}`;
-      bar.style.width = `${normalized}%`;
-      progress.appendChild(bar);
-    };
+    if (item.hasCoverageData && item.total > 0) {
+      const appendBar = (percent, className) => {
+        const normalized = Math.max(0, Math.min(100, percent));
+        if (normalized <= 0) return;
+        const bar = document.createElement("span");
+        bar.className = `coverage-progress__bar ${className}`;
+        bar.style.width = `${normalized}%`;
+        progress.appendChild(bar);
+      };
 
-    if (item.total > 0) {
       const donePercent = (item.done / item.total) * 100;
       const runningPercent = (item.running / item.total) * 100;
-      const pendingPercent = 100 - donePercent - runningPercent;
+      const pendingPercent = Math.max(100 - donePercent - runningPercent, 0);
+
       appendBar(donePercent, "is-done");
       appendBar(runningPercent, "is-running");
       appendBar(pendingPercent, "is-pending");
@@ -962,7 +1399,7 @@ function updateTestCoverageCard() {
       meta.appendChild(env);
     }
 
-    if (item.total > 0) {
+    if (item.hasCoverageData && item.total > 0) {
       const makeStatus = (label, value, statusClass) => {
         const status = document.createElement("span");
         status.className = "coverage-row__status";
@@ -972,47 +1409,209 @@ function updateTestCoverageCard() {
         return status;
       };
 
-      meta.appendChild(makeStatus("Concluídos", item.done, "is-done"));
-      meta.appendChild(makeStatus("Em andamento", item.running, "is-running"));
-      meta.appendChild(makeStatus("Pendentes", item.pending, "is-pending"));
+      meta.appendChild(
+        makeStatus("Concluídos", formatCount(item.done), "is-done")
+      );
+      meta.appendChild(
+        makeStatus("Em andamento", formatCount(item.running), "is-running")
+      );
+      meta.appendChild(
+        makeStatus("Pendentes", formatCount(item.pending), "is-pending")
+      );
 
       const lastRunLabel = formatShortDate(item.lastRun);
-      if (lastRunLabel) {
-        const last = document.createElement("span");
-        last.className = "coverage-row__note";
-        last.textContent = `Última execução: ${lastRunLabel}`;
-        meta.appendChild(last);
-      } else if (!item.hasEnvironment) {
-        const note = document.createElement("span");
-        note.className = "coverage-row__note";
-        note.textContent = "Nenhuma execução registrada";
-        meta.appendChild(note);
-      } else {
-        const note = document.createElement("span");
-        note.className = "coverage-row__note";
-        note.textContent = "Dados de execução indisponíveis";
-        meta.appendChild(note);
-      }
+      const note = document.createElement("span");
+      note.className = "coverage-row__note";
+      note.textContent = lastRunLabel
+        ? `Última execução: ${lastRunLabel}`
+        : "Dados de execução indisponíveis";
+      meta.appendChild(note);
+    } else if (item.hasEnvironment) {
+      const note = document.createElement("span");
+      note.className = "coverage-row__note";
+      note.textContent = "Execuções sem dados registrados";
+      meta.appendChild(note);
+    } else if (item.scenariosDefined) {
+      const note = document.createElement("span");
+      note.className = "coverage-row__note";
+      note.textContent = "Cadastre um ambiente para iniciar as execuções";
+      meta.appendChild(note);
     } else {
-      const noData = document.createElement("span");
-      noData.className = "coverage-row__note";
-      noData.textContent = "Nenhum cenário cadastrado";
-      meta.appendChild(noData);
+      const note = document.createElement("span");
+      note.className = "coverage-row__note";
+      note.textContent = "Nenhum cenário cadastrado";
+      meta.appendChild(note);
     }
 
     row.appendChild(meta);
     dashboardCoverageList.appendChild(row);
   });
 
-  const average = considered > 0 ? Math.round(sumCoverage / considered) : 0;
+  const average = calculateAverageCoverage(dashboardStoreSnapshot);
   if (dashboardCoverageSummary) {
-    dashboardCoverageSummary.textContent = `Média geral: ${average}%`;
+    dashboardCoverageSummary.textContent = average.hasData
+      ? `Média geral: ${average.value}%`
+      : "Média geral: —";
   }
 }
+
+const refreshDashboardView = () => {
+  updateDashboardSnapshot();
+  updateDashboardStats();
+  updateDashboardFilterChipCounts();
+  renderDashboardStores();
+  updateTestCoverageCard();
+  updateDashboardFilterChips();
+  updateDashboardViewButtons();
+};
+
+function resetDashboardFilters(focusSearch = false) {
+  dashboardSearchTerm = "";
+  dashboardSortMode = "recent";
+  dashboardFilterMode = "all";
+  if (dashboardSearchInput) {
+    dashboardSearchInput.value = "";
+    if (focusSearch) {
+      dashboardSearchInput.focus();
+    }
+  }
+  if (dashboardSortSelect) {
+    dashboardSortSelect.value = "recent";
+  }
+  if (dashboardFilterSelect) {
+    dashboardFilterSelect.value = "all";
+  }
+  updateDashboardFilterChips();
+  renderDashboardStores();
+}
+
+if (dashboardSearchInput) {
+  dashboardSearchInput.value = dashboardSearchTerm;
+  dashboardSearchInput.addEventListener("input", (event) => {
+    dashboardSearchTerm = event.target.value || "";
+    renderDashboardStores();
+  });
+}
+
+if (dashboardSortSelect) {
+  dashboardSortSelect.value = dashboardSortMode;
+  dashboardSortSelect.addEventListener("change", (event) => {
+    dashboardSortMode = event.target.value || "recent";
+    renderDashboardStores();
+  });
+}
+
+if (dashboardFilterSelect) {
+  dashboardFilterSelect.value = dashboardFilterMode;
+  dashboardFilterSelect.addEventListener("change", (event) => {
+    dashboardFilterMode = event.target.value || "all";
+    updateDashboardFilterChips();
+    renderDashboardStores();
+  });
+}
+
+if (dashboardViewButtons.length) {
+  dashboardViewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const value = button.dataset.dashboardView || "grid";
+      setDashboardViewMode(value);
+    });
+  });
+}
+
+if (dashboardFilterChips.length) {
+  dashboardFilterChips.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const value = chip.dataset.dashboardFilter || "all";
+      dashboardFilterMode = value;
+      if (dashboardFilterSelect) {
+        dashboardFilterSelect.value = value;
+      }
+      updateDashboardFilterChips();
+      renderDashboardStores();
+    });
+  });
+}
+
+if (btnDashboardRefresh) {
+  btnDashboardRefresh.addEventListener("click", () => {
+    if (btnDashboardRefresh.disabled) return;
+    const original = btnDashboardRefresh.textContent;
+    btnDashboardRefresh.textContent = "Atualizando...";
+    btnDashboardRefresh.disabled = true;
+    try {
+      markDashboardSynced(new Date());
+      refreshDashboardView();
+    } finally {
+      setTimeout(() => {
+        btnDashboardRefresh.textContent = original;
+        btnDashboardRefresh.disabled = false;
+      }, 320);
+    }
+  });
+}
+
+if (btnDashboardResetFilters) {
+  btnDashboardResetFilters.addEventListener("click", () => {
+    resetDashboardFilters(true);
+  });
+}
+
+applyDashboardViewMode();
+updateDashboardViewButtons();
+updateDashboardFilterChips();
+updateDashboardFilterChipCounts();
+updateDashboardLastSyncedLabel();
+setInterval(updateDashboardLastSyncedLabel, 60_000);
+
+if (btnDashboardNewStore) {
+  btnDashboardNewStore.addEventListener("click", () => {
+    if (btnNovaLoja) {
+      btnNovaLoja.click();
+    }
+  });
+}
+
+if (btnDashboardOpenProfile) {
+  btnDashboardOpenProfile.addEventListener("click", () => {
+    if (btnOpenProfile) {
+      btnOpenProfile.click();
+    }
+  });
+}
+
+if (btnDashboardToggleTheme) {
+  btnDashboardToggleTheme.addEventListener("click", () => {
+    const nextTheme = currentTheme === "dark" ? "light" : "dark";
+    applyTheme(nextTheme);
+    updateThemeToggleButtonLabel(nextTheme);
+  });
+  updateThemeToggleButtonLabel(currentTheme);
+}
+
 
 function clearDashboard() {
   storesCache = [];
   environmentsCache = [];
+  dashboardStoreSnapshot = [];
+  dashboardSearchTerm = "";
+  dashboardSortMode = "recent";
+  dashboardFilterMode = "all";
+  dashboardLastSyncedAt = null;
+  if (dashboardSearchInput) {
+    dashboardSearchInput.value = "";
+  }
+  if (dashboardSortSelect) {
+    dashboardSortSelect.value = "recent";
+  }
+  if (dashboardFilterSelect) {
+    dashboardFilterSelect.value = "all";
+  }
+  updateDashboardFilterChipCounts();
+  updateDashboardFilterChips();
+  updateDashboardLastSyncedLabel();
+  updateDashboardViewButtons();
+  updateDashboardStats();
   renderDashboardStores();
   updateTestCoverageCard();
 }
@@ -1026,7 +1625,8 @@ const subscribeCoverageEnvironments = () => {
         id: docSnap.id,
         ...(docSnap.data() || {}),
       }));
-      updateTestCoverageCard();
+      markDashboardSynced();
+      refreshDashboardView();
     }
   );
 };
@@ -1041,8 +1641,8 @@ const subscribeDashboard = () => {
         id: docSnap.id,
         ...(docSnap.data() || {}),
       }));
-      renderDashboardStores();
-      updateTestCoverageCard();
+      markDashboardSynced();
+      refreshDashboardView();
     }
   );
 };
@@ -1104,13 +1704,15 @@ el("btnVoltarLoja").addEventListener("click", () => {
   ambienteSelecionado = null;
 });
 
-el("btnNovaLoja").addEventListener("click", () => {
-  storeForm.reset();
-  storeForm.dataset.mode = "create";
-  storeFormTitle.textContent = "Nova loja";
-  storeFormSubmit.textContent = "Criar loja";
-  abrirModal("modalStore");
-});
+if (btnNovaLoja) {
+  btnNovaLoja.addEventListener("click", () => {
+    storeForm.reset();
+    storeForm.dataset.mode = "create";
+    storeFormTitle.textContent = "Nova loja";
+    storeFormSubmit.textContent = "Criar loja";
+    abrirModal("modalStore");
+  });
+}
 
 el("btnEditarLoja").addEventListener("click", () => {
   if (!lojaSelecionada) return;
@@ -1575,16 +2177,90 @@ async function handleScenarioImport(type, file) {
   }
 }
 
+const getGlobalJsPdfConstructor = () => {
+  const candidates = [
+    globalThis.jspdf?.jsPDF,
+    globalThis.jspdf?.default?.jsPDF,
+    globalThis.jsPDF?.jsPDF,
+    globalThis.jsPDF,
+  ];
+  return candidates.find((candidate) => typeof candidate === "function") || null;
+};
+
+const loadExternalScript = (source) => {
+  if (externalScriptPromises.has(source)) {
+    return externalScriptPromises.get(source);
+  }
+
+  const promise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${source}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+      existing.addEventListener(
+        "load",
+        () => {
+          existing.dataset.loaded = "true";
+          resolve();
+        },
+        { once: true }
+      );
+      existing.addEventListener(
+        "error",
+        () => reject(new Error(`Falha ao carregar script ${source}`)),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = source;
+    script.async = true;
+    script.crossOrigin = "anonymous";
+    script.referrerPolicy = "no-referrer";
+    script.addEventListener(
+      "load",
+      () => {
+        script.dataset.loaded = "true";
+        resolve();
+      },
+      { once: true }
+    );
+    script.addEventListener(
+      "error",
+      () => {
+        script.remove();
+        reject(new Error(`Falha ao carregar script ${source}`));
+      },
+      { once: true }
+    );
+    document.head.appendChild(script);
+  });
+
+  externalScriptPromises.set(source, promise);
+  promise.catch(() => externalScriptPromises.delete(source));
+  return promise;
+};
+
 async function loadJsPDF() {
   if (jsPDFConstructor) return jsPDFConstructor;
-  const sources = [
+
+  const globalCandidate = getGlobalJsPdfConstructor();
+  if (globalCandidate) {
+    jsPDFConstructor = globalCandidate;
+    return jsPDFConstructor;
+  }
+
+  const moduleSources = [
     "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.es.min.js",
     "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
   ];
 
   let lastError = null;
 
-  for (const source of sources) {
+  for (const source of moduleSources) {
     try {
       const module = await import(source);
       const candidate =
@@ -1593,11 +2269,30 @@ async function loadJsPDF() {
         module.default;
       if (typeof candidate === "function") {
         jsPDFConstructor = candidate;
-        break;
+        return jsPDFConstructor;
       }
     } catch (error) {
       lastError = error;
       console.warn(`Falha ao carregar jsPDF de ${source}:`, error);
+    }
+  }
+
+  const scriptSources = [
+    "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+  ];
+
+  for (const source of scriptSources) {
+    try {
+      await loadExternalScript(source);
+      const candidate = getGlobalJsPdfConstructor();
+      if (candidate) {
+        jsPDFConstructor = candidate;
+        return jsPDFConstructor;
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(`Falha ao carregar jsPDF via script de ${source}:`, error);
     }
   }
 
@@ -1748,8 +2443,17 @@ if (btnExportMarkdown) {
 }
 
 if (btnExportPdf) {
-  btnExportPdf.addEventListener("click", () => {
-    exportScenariosAsPdf();
+  btnExportPdf.addEventListener("click", async () => {
+    if (btnExportPdf.disabled) return;
+    const originalText = btnExportPdf.textContent;
+    btnExportPdf.textContent = "Exportando...";
+    btnExportPdf.disabled = true;
+    try {
+      await exportScenariosAsPdf();
+    } finally {
+      btnExportPdf.disabled = false;
+      btnExportPdf.textContent = originalText;
+    }
   });
 }
 
